@@ -40,7 +40,7 @@ int get_comm_partner(int node, int step, int num_nodes) {
 
 int ceil_div(int a, int b) { return (a + b - 1) / b; }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) {  // change
     int device_id = 0;
     Device* device = CreateDevice(device_id);
     CommandQueue& cq = device->command_queue();
@@ -86,24 +86,40 @@ int main(int argc, char** argv) {
     uint32_t semaphore_NW = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     uint32_t semaphore_SE = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
 
-    uint32_t cb_local_index = CBIndex::c_0;
-    uint32_t cb_SE_index = CBIndex::c_1;
-    uint32_t cb_NW_index = CBIndex::c_2;
-    tt::DataFormat cb_data_format = tt::DataFormat::UInt32;
+    {  // initialize cbs
+        uint32_t cb_local_index = CBIndex::c_0;
+        uint32_t cb_noc_SE_index = CBIndex::c_1;
+        uint32_t cb_noc_NW_index = CBIndex::c_2;
+        uint32_t cb_compute_index = CBIndex::c_3;
+        uint32_t cb_recv_index = CBIndex::c_4;
+        uint32_t cb_recv2_index = CBIndex::c_5;
+        tt::DataFormat cb_data_format = tt::DataFormat::UInt32;
 
-    CircularBufferConfig cb_config_local =
-        tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_local_index, cb_data_format}})
-            .set_page_size(cb_local_index, input_arr_size * sizeof(uint32_t));
-    CircularBufferConfig cb_config_SE =
-        tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_SE_index, cb_data_format}})
-            .set_page_size(cb_SE_index, input_arr_size * sizeof(uint32_t));
-    CircularBufferConfig cb_config_NW =
-        tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_NW_index, cb_data_format}})
-            .set_page_size(cb_NW_index, input_arr_size * sizeof(uint32_t));
+        CircularBufferConfig cb_config_local =
+            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_local_index, cb_data_format}})
+                .set_page_size(cb_local_index, input_arr_size * sizeof(uint32_t));
+        CircularBufferConfig cb_config_noc_SE =
+            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_SE_index, cb_data_format}})
+                .set_page_size(cb_noc_SE_index, sizeof(uint32_t));
+        CircularBufferConfig cb_config_noc_NW =
+            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_NW_index, cb_data_format}})
+                .set_page_size(cb_noc_NW_index, sizeof(uint32_t));
+        CircularBufferConfig cb_config_compute =
+            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_compute_index, cb_data_format}})
+                .set_page_size(cb_compute_index, sizeof(uint32_t));
+        CircularBufferConfig cb_config_recv =
+            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_recv_index, cb_data_format}})
+                .set_page_size(cb_recv_index, input_arr_size * sizeof(uint32_t));
+        CircularBufferConfig cb_config_recv2 =
+            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_recv2_index, cb_data_format}})
+                .set_page_size(cb_recv2_index, input_arr_size * sizeof(uint32_t));
 
-    auto cb_local = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
-    auto cb_SE = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
-    auto cb_NW = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
+        auto cb_local = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
+        auto cb_noc_SE = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_SE);
+        auto cb_noc_NW = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_NW);
+        auto cb_compute = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
+        auto cb_recv = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
+    }
 
     CoreCoord logical_core;
     CoreCoord physical_core;
@@ -112,28 +128,17 @@ int main(int argc, char** argv) {
     KernelHandle data_movement_kernel_step0;
     KernelHandle data_movement_kernel_step1;
 
-    uint32_t initializer_args[6];
-    initializer_args[0] = src_dram_buffer->address();
-    initializer_args[1] = src_dram_noc_x;
-    initializer_args[2] = src_dram_noc_y;
-    initializer_args[5] = input_arr_size;
-
     uint32_t compute_args[5];
     compute_args[2] = input_arr_size;
 
-    std::vector<uint32_t> data_movement_args(7 + 2 * ceil_div(swing_algo_steps, 2));
+    std::vector<uint32_t> data_movement_args(10 + 2 * ceil_div(swing_algo_steps, 2));
     data_movement_args[3] = input_arr_size;
+    data_movement_args[7] = src_dram_buffer->address();
+    data_movement_args[8] = src_dram_noc_x;
+    data_movement_args[9] = src_dram_noc_y;
 
     for (int i = 0; i < core_array.size(); i++) {  // calcs the destination core for each core for each step
         physical_core = device->worker_core_from_logical_core(core_array[i]);
-        initializer_args[3] = (uint32_t)physical_core.x;
-        initializer_args[4] = (uint32_t)physical_core.y;
-        KernelHandle initializer_kernel = CreateKernel(
-            program,
-            "tt_metal/programming_examples/hello_charlie/kernels/dataflow_initializer.cpp",
-            core_array[i],
-            DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
-        SetRuntimeArgs(program, initializer_kernel, core_array[i], initializer_args);
 
         start_direction_SE = !start_direction_SE;
         compute_args[0] = (uint32_t)start_direction_SE;
@@ -141,7 +146,8 @@ int main(int argc, char** argv) {
         compute_args[4] = (uint32_t)physical_core.y;
         KernelHandle compute_kernel = CreateKernel(
             program,
-            "tt_metal/programming_examples/hello_charlie/kernels/compute_add_to_local.cpp",
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore/kernels/"
+            "/compute_add_to_local.cpp",
             core_array[i],
             ComputeConfig{
                 // .math_fidelity = MathFidelity::HiFi4,
@@ -163,7 +169,8 @@ int main(int argc, char** argv) {
 
             data_movement_kernel_step0 = CreateKernel(
                 program,
-                "tt_metal/programming_examples/hello_charlie/kernels/dataflow_data_movement.cpp",
+                "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore/kernels/"
+                "dataflow_data_movement.cpp",
                 core_array[i],
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
         } else {
@@ -172,7 +179,8 @@ int main(int argc, char** argv) {
 
             data_movement_kernel_step0 = CreateKernel(
                 program,
-                "tt_metal/programming_examples/hello_charlie/kernels/dataflow_data_movement.cpp",
+                "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore/kernels/"
+                "dataflow_data_movement.cpp",
                 core_array[i],
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         }
@@ -182,8 +190,8 @@ int main(int argc, char** argv) {
             physical_core = device->worker_core_from_logical_core(logical_core);
 
             // printf("Core (%d,%d) step %d partner (%d, %d)\n", i, 0, j, (int)physical_core.x, (int)physical_core.y);
-            data_movement_args[7 + 2 * j] = {(uint32_t)physical_core.x};
-            data_movement_args[8 + 2 * j] = {(uint32_t)physical_core.y};
+            data_movement_args[10 + 2 * j] = {(uint32_t)physical_core.x};
+            data_movement_args[11 + 2 * j] = {(uint32_t)physical_core.y};
         }
 
         SetRuntimeArgs(program, data_movement_kernel_step0, core_array[i], data_movement_args);
@@ -197,7 +205,8 @@ int main(int argc, char** argv) {
 
             data_movement_kernel_step1 = CreateKernel(
                 program,
-                "tt_metal/programming_examples/hello_charlie/kernels/dataflow_data_movement.cpp",
+                "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore/kernels/"
+                "dataflow_data_movement.cpp",
                 core_array[i],
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         } else {
@@ -206,7 +215,8 @@ int main(int argc, char** argv) {
 
             data_movement_kernel_step1 = CreateKernel(
                 program,
-                "tt_metal/programming_examples/hello_charlie/kernels/dataflow_data_movement.cpp",
+                "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore/kernels/"
+                "dataflow_data_movement.cpp",
                 core_array[i],
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
         }
@@ -216,8 +226,8 @@ int main(int argc, char** argv) {
             physical_core = device->worker_core_from_logical_core(logical_core);
 
             // printf("Core (%d,%d) step %d partner (%d, %d)\n", i, 0, j, (int)physical_core.x, (int)physical_core.y);
-            data_movement_args[7 + 2 * j] = {(uint32_t)physical_core.x};
-            data_movement_args[8 + 2 * j] = {(uint32_t)physical_core.y};
+            data_movement_args[10 + 2 * j] = {(uint32_t)physical_core.x};
+            data_movement_args[11 + 2 * j] = {(uint32_t)physical_core.y};
         }
         SetRuntimeArgs(program, data_movement_kernel_step1, core_array[i], data_movement_args);
     }
