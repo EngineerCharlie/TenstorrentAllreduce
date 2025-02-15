@@ -13,6 +13,9 @@ void kernel_main() {
     uint32_t num_swing_steps = get_arg_val<uint32_t>(4);
     uint32_t this_core_x = get_arg_val<uint32_t>(5);
     uint32_t this_core_y = get_arg_val<uint32_t>(6);
+    uint32_t src_dram_addr = get_arg_val<uint32_t>(7);
+    uint32_t src_dram_noc_x = get_arg_val<uint32_t>(8);
+    uint32_t src_dram_noc_y = get_arg_val<uint32_t>(9);
 
     // define circular buffers
     constexpr uint32_t cb_local = tt::CBIndex::c_0;
@@ -27,6 +30,7 @@ void kernel_main() {
     }
 
     uint32_t tile_size = get_tile_size(cb_local);
+    uint32_t tile_size_recv = get_tile_size(cb_local);
 
     uint32_t local_addr = get_write_ptr(cb_local);
     uint32_t recv_addr = get_write_ptr(cb_recv);
@@ -36,30 +40,29 @@ void kernel_main() {
 
     uint32_t* local_array = reinterpret_cast<uint32_t*>(local_addr);
     uint32_t* recv_array = reinterpret_cast<uint32_t*>(recv_addr);
+    uint32_t* recv2_array = reinterpret_cast<uint32_t*>(recv2_addr);
 
     if (!this_core_SE) {  // Read data from SRAM
-        uint32_t src_dram_addr = get_arg_val<uint32_t>(7);
-        uint32_t src_dram_noc_x = get_arg_val<uint32_t>(8);
-        uint32_t src_dram_noc_y = get_arg_val<uint32_t>(9);
         uint64_t src_dram_noc_addr = get_noc_addr(src_dram_noc_x, src_dram_noc_y, src_dram_addr);
         cb_reserve_back(cb_compute, 1);
-        noc_async_read(src_dram_noc_addr, recv2_addr, tile_size);
-        noc_async_read(src_dram_noc_addr, recv_addr, tile_size);
+        noc_async_read(src_dram_noc_addr, local_addr, tile_size_recv);
         noc_async_read_barrier();
-
-        DPRINT << "Core " << this_core_x << this_core_y << " read from SRAM " << recv_array[0] << ENDL();
+        for (int i = 0; i < (int)in_arr_size; i++) {
+            recv_array[i] = local_array[i];
+            recv2_array[i] = local_array[i];
+        }
+        DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " read from SRAM " << recv_array[0]
+               << " " << recv2_array[3] << ENDL();
         cb_push_back(cb_compute, 1);
     }
     // DPRINT << "Core " << this_core_x << this_core_y << " prevalue: " << local_array[0] << ENDL();
 
-
     // Get semaphores
-    volatile tt_l1_ptr uint32_t* semaphore_local_ptr =
-        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_local);
-    
+    volatile tt_l1_ptr uint32_t* semaphore_local_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_local);
+
     volatile tt_l1_ptr uint32_t* semaphore_remote_ptr =
         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_remote);
-
+    // DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " post wait val: " << ENDL();
     // get swing partners
     uint32_t dst_core_x[num_swing_steps];
     uint32_t dst_core_y[num_swing_steps];
@@ -73,7 +76,10 @@ void kernel_main() {
     // cb_reserve_back(cb_local, in_arr_size);  // has to be before get_write_ptr??
 
     cb_wait_front(cb_noc, 1);
-    DPRINT << "Core " << this_core_x << this_core_y << " post wait val: " << local_array[0] << ENDL();
+    DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE
+           << " post wait val: " << local_array[0] <<" " << local_array[1] << ENDL();
+    // DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " " << recv_array[0] << " "
+    //        << recv2_array[0] << ENDL();
     cb_pop_front(cb_noc, 1);
     // DPRINT << "Core " << this_core_x << this_core_y << " prerecvvalue: " << recv_array[0] << ENDL();
     // uint64_t dst_noc_semaphore_1;
@@ -105,8 +111,9 @@ void kernel_main() {
     //     // DPRINT << "Core " << this_core_x << this_core_y << " midvalue: " << local_array[0] << ENDL();
     // }
 
-    // DPRINT << "Core " << this_core_x << this_core_y << " endvalue: " << local_array[0] << ENDL();
+    // DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " end " << ENDL();
 
     // cb_push_back(cb_recv, onetile);
     // cb_push_back(cb_local, onetile);
+    // noc_async_write(src_dram_noc_addr, recv_addr, tile_size);
 }

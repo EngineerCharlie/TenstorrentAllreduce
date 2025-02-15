@@ -46,32 +46,33 @@ int main(int argc, char** argv) {  // change
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
-    const uint32_t input_arr_size = 48;
+    const uint32_t input_arr_size = 4;
     const uint32_t core_arr_size = 4;
-    const uint32_t swing_algo_steps = 3;  // log2(input_arr_size)
+    const uint32_t swing_algo_steps = 2;  // log2(core_arr_size)
 
     uint32_t input_array[input_arr_size];
     CoreCoord start_core = {0, 0};
     CoreCoord end_core = {3, 0};
-    uint32_t curr_time = (uint32_t)time_4dig_int();
 
-    std::array<CoreCoord, core_arr_size> core_array;
+    uint32_t curr_time = (uint32_t)time_4dig_int();
     for (int i = 0; i < input_arr_size; i++) {
         input_array[i] = curr_time + i * 0;
     }
     printf("Host's input number was %d\n", input_array[0]);
     printf("Output should be %d\n", core_arr_size * input_array[0]);
 
-    constexpr uint32_t single_tile_size = input_arr_size * sizeof(uint32_t);
+    constexpr uint32_t single_tile_size = 2 * 1024;
     InterleavedBufferConfig dram_config{
         .device = device, .size = single_tile_size, .page_size = single_tile_size, .buffer_type = BufferType::DRAM};
     std::shared_ptr<Buffer> src_dram_buffer = CreateBuffer(dram_config);
+    EnqueueWriteBuffer(cq, src_dram_buffer, input_array, true);
+
     auto src_dram_noc_coord = src_dram_buffer->noc_coordinates();
     uint32_t src_dram_noc_x = src_dram_noc_coord.x;
     uint32_t src_dram_noc_y = src_dram_noc_coord.y;
-    EnqueueWriteBuffer(cq, src_dram_buffer, input_array, false);
 
     // Populate the array using a loop
+    std::array<CoreCoord, core_arr_size> core_array;
     for (uint32_t i = 0; i < core_array.size(); i++) {
         core_array[i] = {i % 8, i / 8};  // y is fixed at 0, x ranges from 0 to 7
         // printf(
@@ -86,40 +87,41 @@ int main(int argc, char** argv) {  // change
     uint32_t semaphore_NW = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     uint32_t semaphore_SE = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
 
-    {  // initialize cbs
-        uint32_t cb_local_index = CBIndex::c_0;
-        uint32_t cb_noc_SE_index = CBIndex::c_1;
-        uint32_t cb_noc_NW_index = CBIndex::c_2;
-        uint32_t cb_compute_index = CBIndex::c_3;
-        uint32_t cb_recv_index = CBIndex::c_4;
-        uint32_t cb_recv2_index = CBIndex::c_5;
-        tt::DataFormat cb_data_format = tt::DataFormat::UInt32;
+    
+    uint32_t cb_local_index = CBIndex::c_0;
+    uint32_t cb_noc_SE_index = CBIndex::c_1;
+    uint32_t cb_noc_NW_index = CBIndex::c_2;
+    uint32_t cb_compute_index = CBIndex::c_3;
+    uint32_t cb_recv_index = CBIndex::c_4;
+    uint32_t cb_recv2_index = CBIndex::c_5;
+    tt::DataFormat cb_data_format = tt::DataFormat::UInt32;
 
-        CircularBufferConfig cb_config_local =
-            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_local_index, cb_data_format}})
-                .set_page_size(cb_local_index, input_arr_size * sizeof(uint32_t));
-        CircularBufferConfig cb_config_noc_SE =
-            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_SE_index, cb_data_format}})
-                .set_page_size(cb_noc_SE_index, sizeof(uint32_t));
-        CircularBufferConfig cb_config_noc_NW =
-            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_NW_index, cb_data_format}})
-                .set_page_size(cb_noc_NW_index, sizeof(uint32_t));
-        CircularBufferConfig cb_config_compute =
-            tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_compute_index, cb_data_format}})
-                .set_page_size(cb_compute_index, sizeof(uint32_t));
-        CircularBufferConfig cb_config_recv =
-            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_recv_index, cb_data_format}})
-                .set_page_size(cb_recv_index, input_arr_size * sizeof(uint32_t));
-        CircularBufferConfig cb_config_recv2 =
-            tt::tt_metal::CircularBufferConfig(input_arr_size * sizeof(uint32_t), {{cb_recv2_index, cb_data_format}})
-                .set_page_size(cb_recv2_index, input_arr_size * sizeof(uint32_t));
+    CircularBufferConfig cb_config_local =
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_local_index, cb_data_format}})
+            .set_page_size(cb_local_index, single_tile_size);
+    CircularBufferConfig cb_config_noc_SE =
+        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_SE_index, cb_data_format}})
+            .set_page_size(cb_noc_SE_index, sizeof(uint32_t));
+    CircularBufferConfig cb_config_noc_NW =
+        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_NW_index, cb_data_format}})
+            .set_page_size(cb_noc_NW_index, sizeof(uint32_t));
+    CircularBufferConfig cb_config_compute =
+        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_compute_index, cb_data_format}})
+            .set_page_size(cb_compute_index, sizeof(uint32_t));
+    CircularBufferConfig cb_config_recv =
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_recv_index, cb_data_format}})
+            .set_page_size(cb_recv_index, input_arr_size * sizeof(uint32_t));
+    CircularBufferConfig cb_config_recv2 =
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_recv2_index, cb_data_format}})
+            .set_page_size(cb_recv2_index, single_tile_size);
 
-        auto cb_local = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
-        auto cb_noc_SE = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_SE);
-        auto cb_noc_NW = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_NW);
-        auto cb_compute = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
-        auto cb_recv = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
-    }
+    auto cb_local = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
+    auto cb_noc_SE = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_SE);
+    auto cb_noc_NW = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_noc_NW);
+    auto cb_compute = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
+    auto cb_recv = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
+    auto cb_recv2 = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv2);
+    
 
     CoreCoord logical_core;
     CoreCoord physical_core;
@@ -160,7 +162,7 @@ int main(int argc, char** argv) {  // change
         data_movement_args[5] = (uint32_t)physical_core.x;
         data_movement_args[6] = (uint32_t)physical_core.y;
 
-        // STEP 0 data movement kernel
+        // SWING STEP 0 data movement kernel
         data_movement_args[2] = (uint32_t)start_direction_SE;
         data_movement_args[4] = ceil_div(swing_algo_steps, 2);
         if (start_direction_SE) {
@@ -196,7 +198,8 @@ int main(int argc, char** argv) {  // change
 
         SetRuntimeArgs(program, data_movement_kernel_step0, core_array[i], data_movement_args);
 
-        // STEP 1 data movement kernel
+        // SWING STEP 1 data movement kernel
+        
         data_movement_args[2] = (uint32_t)!start_direction_SE;
         data_movement_args[4] = swing_algo_steps / 2;
         if (start_direction_SE) {
@@ -230,13 +233,13 @@ int main(int argc, char** argv) {  // change
             data_movement_args[11 + 2 * j] = {(uint32_t)physical_core.y};
         }
         SetRuntimeArgs(program, data_movement_kernel_step1, core_array[i], data_movement_args);
+        
     }
-    printf("Program starting\n");
     EnqueueProgram(cq, program, false);
-    printf("Awaiting finish\n");
+    printf("Program started, awaiting finish\n");
     Finish(cq);
     printf("Closing device\n");
     CloseDevice(device);
     printf("Program finished\n");
-    return 0;
+    // return 0;
 }

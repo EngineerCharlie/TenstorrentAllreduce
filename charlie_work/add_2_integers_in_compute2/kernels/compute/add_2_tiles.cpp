@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/tile_move_copy.h"
+#include "debug/dprint.h"  // required in all kernels using DPRINT
 
 namespace NAMESPACE {
 void MAIN {
@@ -37,7 +38,7 @@ void MAIN {
     cb_pop_front(cb_in1, 1);
 
     cb_push_back(cb_out0, 1);
-
+    // DPRINT_MATH(DPRINT << "Compute " << " done " << ENDL());
     /*
     acquire_dst();
 

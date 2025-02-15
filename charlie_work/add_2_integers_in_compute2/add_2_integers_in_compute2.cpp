@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
-    printf("Result = %d\n", result_vec[0]);  // 22 = 1102070192
+    printf("Result = %d\n", result_vec[63]);  // 22 = 1102070192
     printf(
         "Expected = %d\n",
         pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(22.0f), bfloat16(22.0f))));

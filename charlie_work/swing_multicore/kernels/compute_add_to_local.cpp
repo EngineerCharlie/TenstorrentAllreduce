@@ -42,10 +42,9 @@ void MAIN {
     cb_pop_front(cb_compute, 1);
     cb_push_back(cb_noc_NW, 1);
     cb_push_back(cb_noc_SE, 1);
-
-    // DPRINT << "Compute " << this_core_x << this_core_y << " prevalue: " << local_array[0] << ENDL();
-    for (int i = 0; i < (int)num_swing_steps; i++) {
-        pass_data_NW = !pass_data_NW;
+    // DPRINT_MATH(DPRINT << "Hello, Master, I am running a void compute kernel." << ENDL());
+    // for (int i = 0; i < (int)num_swing_steps; i++) {
+        // pass_data_NW = !pass_data_NW;
         // if (pass_data_NW) {
         //     cb_push_back(cb_noc_NW, 1);
         //     // cb_wait_front(cb_local, 1);  // wait while data movement kernel gets next tranch of data
@@ -65,8 +64,7 @@ void MAIN {
         // tile_regs_wait();           // Ensure packing completes before continuing
         // pack_tile(0, cb_local);  // Store the computed tile back in recvNW buffer
         // tile_regs_release();        // Release tile registers
-    }
-    // DPRINT_MATH(DPRINT << "Hello, Master, I am running a void compute kernel." << ENDL());
+    // }
     // DPRINT << "Compute " << this_core_x << this_core_y << " endvalue: " << local_array[0] << ENDL();
 }
 }  // namespace NAMESPACE
