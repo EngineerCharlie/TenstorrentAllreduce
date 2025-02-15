@@ -100,17 +100,17 @@ int main(int argc, char** argv) {  // change
         tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_local_index, cb_data_format}})
             .set_page_size(cb_local_index, single_tile_size);
     CircularBufferConfig cb_config_noc_SE =
-        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_SE_index, cb_data_format}})
-            .set_page_size(cb_noc_SE_index, sizeof(uint32_t));
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_noc_SE_index, cb_data_format}})
+            .set_page_size(cb_noc_SE_index, single_tile_size);
     CircularBufferConfig cb_config_noc_NW =
-        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_noc_NW_index, cb_data_format}})
-            .set_page_size(cb_noc_NW_index, sizeof(uint32_t));
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_noc_NW_index, cb_data_format}})
+            .set_page_size(cb_noc_NW_index, single_tile_size);
     CircularBufferConfig cb_config_compute =
-        tt::tt_metal::CircularBufferConfig(sizeof(uint32_t), {{cb_compute_index, cb_data_format}})
-            .set_page_size(cb_compute_index, sizeof(uint32_t));
+        tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_compute_index, cb_data_format}})
+            .set_page_size(cb_compute_index, single_tile_size);
     CircularBufferConfig cb_config_recv =
         tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_recv_index, cb_data_format}})
-            .set_page_size(cb_recv_index, input_arr_size * sizeof(uint32_t));
+            .set_page_size(cb_recv_index, single_tile_size);
     CircularBufferConfig cb_config_recv2 =
         tt::tt_metal::CircularBufferConfig(single_tile_size, {{cb_recv2_index, cb_data_format}})
             .set_page_size(cb_recv2_index, single_tile_size);

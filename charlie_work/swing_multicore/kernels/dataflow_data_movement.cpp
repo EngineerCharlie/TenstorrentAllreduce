@@ -45,11 +45,11 @@ void kernel_main() {
     if (!this_core_SE) {  // Read data from SRAM
         uint64_t src_dram_noc_addr = get_noc_addr(src_dram_noc_x, src_dram_noc_y, src_dram_addr);
         cb_reserve_back(cb_compute, 1);
-        noc_async_read(src_dram_noc_addr, local_addr, tile_size_recv);
+        noc_async_read(src_dram_noc_addr, recv2_addr, tile_size_recv);
         noc_async_read_barrier();
         for (int i = 0; i < (int)in_arr_size; i++) {
-            recv_array[i] = local_array[i];
-            recv2_array[i] = local_array[i];
+            // recv_array[i] = local_array[i];
+            // recv2_array[i] = local_array[i];
         }
         DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " read from SRAM " << recv_array[0]
                << " " << recv2_array[3] << ENDL();

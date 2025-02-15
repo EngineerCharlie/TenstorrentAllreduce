@@ -52,13 +52,13 @@ int main(int argc, char** argv) {
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src1_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(src1_cb_index, single_tile_size);
     CBHandle cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
-    
+
     constexpr uint32_t src2_cb_index = CBIndex::c_2;
     CircularBufferConfig cb_src2_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src2_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(src2_cb_index, single_tile_size);
     CBHandle cb_src2 = tt_metal::CreateCircularBuffer(program, core, cb_src2_config);
-    
+
     constexpr uint32_t src3_cb_index = CBIndex::c_3;
     CircularBufferConfig cb_src3_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src3_cb_index, tt::DataFormat::Float16_b}})
@@ -88,7 +88,8 @@ int main(int argc, char** argv) {
 
     KernelHandle unary_writer_kernel_id = CreateKernel(
         program,
-        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/add_2_integers_in_compute2/kernels/dataflow/writer_1_tile.cpp",
+        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/add_2_integers_in_compute2/kernels/"
+        "dataflow/writer_1_tile.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
 
@@ -98,7 +99,8 @@ int main(int argc, char** argv) {
     /* Use the add_tiles operation in the compute kernel */
     KernelHandle eltwise_binary_kernel_id = CreateKernel(
         program,
-        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/add_2_integers_in_compute2/kernels/compute/add_2_tiles.cpp",
+        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/add_2_integers_in_compute2/kernels/"
+        "compute/add_2_tiles.cpp",
         core,
         ComputeConfig{
             .math_fidelity = MathFidelity::HiFi4,
@@ -108,8 +110,8 @@ int main(int argc, char** argv) {
         });
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src0_vec;
-    std::vector<uint32_t> src1_vec;
+    std::vector<uint32_t> src0_vec;  //(single_tile_size, 14);
+    std::vector<uint32_t> src1_vec;  //(single_tile_size, 8);
     src0_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
     src1_vec = create_constant_vector_of_bfloat16(single_tile_size, 8.0f);
 
@@ -136,10 +138,19 @@ int main(int argc, char** argv) {
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
+    printf("Source = %d\n", (int)src0_vec[0]);  // 22 = 1102070192
+    // Unpack the two bfloat16 values from the packed uint32_t
+    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
-    printf("Result = %d\n", result_vec[63]);  // 22 = 1102070192
+    // Convert the unpacked bfloat16 values back to float for printing
+    float first_bfloat_value = two_bfloats.first.to_float();
+    float second_bfloat_value = two_bfloats.second.to_float();
+    printf("Result (nocast) = %d\n", result_vec[0]);           // 22 = 1102070192
+    printf("Result to int = %d\n", (int)first_bfloat_value);   // 22 = 1102070192
+    printf("Result to int = %d\n", (int)second_bfloat_value);  // 22 = 1102070192
     printf(
-        "Expected = %d\n",
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(22.0f), bfloat16(22.0f))));
+        "Expected = %d (or in human fkin numbers = %d\n",
+        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(22.0f), bfloat16(22.0f))),
+        22);
     CloseDevice(device);
 }
