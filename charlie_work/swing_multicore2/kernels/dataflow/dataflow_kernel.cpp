@@ -26,7 +26,7 @@ void kernel_main() {
     bool direction_SE = (bool)get_arg_val<uint32_t>(12);
 
     uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
-    uint64_t dst_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_addr);
+    uint64_t host_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_addr);
 
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
@@ -51,6 +51,9 @@ void kernel_main() {
     uint32_t l1_write_addr_recv = get_write_ptr(cb_id_recv);
     uint32_t l1_write_addr_local = get_write_ptr(cb_id_local);
 
+    volatile tt_l1_ptr uint32_t* semaphore_0_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_0);
+    volatile tt_l1_ptr uint32_t* semaphore_1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_1);
+
     uint32_t* local_array = reinterpret_cast<uint32_t*>(l1_write_addr_local);
 
     // read ublocks from src to local, then push ublocks to compute (unpacker)
@@ -60,8 +63,8 @@ void kernel_main() {
         noc_async_read_barrier();
         cb_push_back(cb_id_compute, 1);
     }
-    
-    //read in swing partner addresses
+
+    // read in swing partner addresses
     uint32_t dst_core_x[swing_algo_steps];
     uint32_t dst_core_y[swing_algo_steps];
 
@@ -70,12 +73,24 @@ void kernel_main() {
         dst_core_y[i] = get_arg_val<uint32_t>(14 + 2 * i);
     }
 
-    for (uint32_t i = 0; i < swing_algo_steps; i++) {
+    uint64_t dst_noc_semaphore_0;
+    uint64_t dst_noc_semaphore_1;
+    uint64_t dst_noc_addr;
+    for (uint32_t i = 0; i < swing_algo_steps; i++) {            
+        if (this_core_SE == direction_SE) {
+            DPRINT << "Core " << this_core_x << this_core_y << (int)this_core_SE << " step: " << i << ENDL();
+            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0);
+            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1);
+            dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
+            cb_wait_front(cb_id_this, 1);
+            cb_pop_front(cb_id_this, 1);
+            cb_push_back(cb_id_compute, 1);
+        }
+        direction_SE = !direction_SE;
     }
 
-    cb_wait_front(cb_id_this, 1);
-    noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
+    // cb_wait_front(cb_id_this, 1);
+    noc_async_write(l1_write_addr_local, host_noc_addr, ublock_size_bytes_data);
     noc_async_write_barrier();
-    cb_pop_front(cb_id_this, 1);
-    DPRINT << "Core " << this_core_x << this_core_y << " sum: " << local_array[0] << ENDL();
+    DPRINT << "Core " << this_core_x << this_core_y << (int)this_core_SE << " sum: " << local_array[0] << ENDL();
 }

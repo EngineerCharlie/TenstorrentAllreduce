@@ -104,19 +104,19 @@ int main(int argc, char** argv) {
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
-    std::vector<uint32_t> dataflow_args(15 + 2 * ceil_div(swing_algo_steps, 2));
+    std::vector<uint32_t> dataflow_args(15 + 2 * swing_algo_steps);
     dataflow_args[0] = src_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[2] = src_dram_noc_x;
     dataflow_args[3] = src_dram_noc_y;
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
-    dataflow_args[6] = ceil_div(swing_algo_steps, 2);
+    dataflow_args[6] = swing_algo_steps;
     dataflow_args[7] = semaphore_0;
     dataflow_args[8] = semaphore_1;
 
     std::vector<uint32_t> compute_args(4);
-    compute_args[0] = ceil_div(swing_algo_steps, 2);
+    compute_args[0] = swing_algo_steps;
 
     KernelHandle dataflow_kernel;
     KernelHandle compute_kernel;
@@ -151,9 +151,7 @@ int main(int argc, char** argv) {
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
-        start_direction_SE = !start_direction_SE;
         dataflow_args[11] = (uint32_t)false;  // this_core_SE
-        dataflow_args[12] = (uint32_t)start_direction_SE;
         dataflow_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
@@ -180,6 +178,7 @@ int main(int argc, char** argv) {
                 .compile_args = compute_args,
             });
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
+        start_direction_SE = !start_direction_SE;
     }
 
     EnqueueProgram(cq, program, false);
