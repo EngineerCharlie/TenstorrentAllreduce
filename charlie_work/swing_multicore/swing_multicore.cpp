@@ -50,14 +50,17 @@ int main(int argc, char** argv) {  // change
     const uint32_t core_arr_size = 4;
     const uint32_t swing_algo_steps = 2;  // log2(core_arr_size)
 
-    uint32_t input_array[input_arr_size];
+    // uint32_t input_array[input_arr_size];
     CoreCoord start_core = {0, 0};
     CoreCoord end_core = {3, 0};
 
     uint32_t curr_time = (uint32_t)time_4dig_int();
-    for (int i = 0; i < input_arr_size; i++) {
-        input_array[i] = curr_time + i * 0;
-    }
+    std::vector<uint32_t> input_array;  //(single_tile_size, 14);
+    input_array = create_constant_vector_of_bfloat16(input_arr_size, (float)curr_time);
+    // for (int i = 0; i < input_arr_size; i++) {
+    //     input_array[i] = curr_time + i * 0;
+    // }
+    printf("curr_time was %d\n", curr_time);
     printf("Host's input number was %d\n", input_array[0]);
     printf("Output should be %d\n", core_arr_size * input_array[0]);
 
@@ -65,11 +68,14 @@ int main(int argc, char** argv) {  // change
     InterleavedBufferConfig dram_config{
         .device = device, .size = single_tile_size, .page_size = single_tile_size, .buffer_type = BufferType::DRAM};
     std::shared_ptr<Buffer> src_dram_buffer = CreateBuffer(dram_config);
-    EnqueueWriteBuffer(cq, src_dram_buffer, input_array, true);
-
+    std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
     auto src_dram_noc_coord = src_dram_buffer->noc_coordinates();
+    auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
     uint32_t src_dram_noc_x = src_dram_noc_coord.x;
     uint32_t src_dram_noc_y = src_dram_noc_coord.y;
+    uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
+    uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
+    EnqueueWriteBuffer(cq, src_dram_buffer, input_array, false);
 
     // Populate the array using a loop
     std::array<CoreCoord, core_arr_size> core_array;
@@ -87,7 +93,6 @@ int main(int argc, char** argv) {  // change
     uint32_t semaphore_NW = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     uint32_t semaphore_SE = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
 
-    
     uint32_t cb_local_index = CBIndex::c_0;
     uint32_t cb_noc_SE_index = CBIndex::c_1;
     uint32_t cb_noc_NW_index = CBIndex::c_2;
@@ -121,7 +126,6 @@ int main(int argc, char** argv) {  // change
     auto cb_compute = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
     auto cb_recv = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
     auto cb_recv2 = tt::tt_metal::CreateCircularBuffer(program, cores, cb_config_recv2);
-    
 
     CoreCoord logical_core;
     CoreCoord physical_core;
@@ -133,11 +137,14 @@ int main(int argc, char** argv) {  // change
     uint32_t compute_args[5];
     compute_args[2] = input_arr_size;
 
-    std::vector<uint32_t> data_movement_args(10 + 2 * ceil_div(swing_algo_steps, 2));
+    std::vector<uint32_t> data_movement_args(12 + 2 * ceil_div(swing_algo_steps, 2));
     data_movement_args[3] = input_arr_size;
     data_movement_args[7] = src_dram_buffer->address();
     data_movement_args[8] = src_dram_noc_x;
     data_movement_args[9] = src_dram_noc_y;
+    data_movement_args[10] = src_dram_buffer->address();
+    data_movement_args[11] = src_dram_noc_x;
+    data_movement_args[12] = src_dram_noc_y;
 
     for (int i = 0; i < core_array.size(); i++) {  // calcs the destination core for each core for each step
         physical_core = device->worker_core_from_logical_core(core_array[i]);
@@ -199,7 +206,7 @@ int main(int argc, char** argv) {  // change
         SetRuntimeArgs(program, data_movement_kernel_step0, core_array[i], data_movement_args);
 
         // SWING STEP 1 data movement kernel
-        
+
         data_movement_args[2] = (uint32_t)!start_direction_SE;
         data_movement_args[4] = swing_algo_steps / 2;
         if (start_direction_SE) {
@@ -233,12 +240,26 @@ int main(int argc, char** argv) {  // change
             data_movement_args[11 + 2 * j] = {(uint32_t)physical_core.y};
         }
         SetRuntimeArgs(program, data_movement_kernel_step1, core_array[i], data_movement_args);
-        
     }
     EnqueueProgram(cq, program, false);
     printf("Program started, awaiting finish\n");
     Finish(cq);
     printf("Closing device\n");
+    std::vector<uint32_t> result_vec;
+    EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
+    // Unpack the two bfloat16 values from the packed uint32_t
+    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
+
+    // Convert the unpacked bfloat16 values back to float for printing
+    float first_bfloat_value = two_bfloats.first.to_float();
+    float second_bfloat_value = two_bfloats.second.to_float();
+    printf("Result (nocast) = %d\n", result_vec[0]);           // 22 = 1102070192
+    printf("Result to int = %d\n", (int)first_bfloat_value);   // 22 = 1102070192
+    printf("Result to int = %d\n", (int)second_bfloat_value);  // 22 = 1102070192
+    printf(
+        "Expected = %d (or in human fkin numbers = %d\n",
+        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(22.0f), bfloat16(22.0f))),
+        22);
     CloseDevice(device);
     printf("Program finished\n");
     // return 0;

@@ -24,19 +24,19 @@ void MAIN {
     constexpr uint32_t cb_recv = tt::CBIndex::c_4;
     constexpr uint32_t cb_recv2 = tt::CBIndex::c_5;
 
-    binary_op_init_common(cb_recv, cb_recv2, cb_local);
-    add_tiles_init(cb_recv, cb_recv2);
+    binary_op_init_common(cb_recv2, cb_recv2, cb_recv2);
+    add_tiles_init(cb_recv2, cb_recv2);
 
     // wait for a block of tiles in each of input CBs
     cb_wait_front(cb_compute, 1);
     // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " has started " << ENDL());
     tile_regs_acquire();  // acquire 8 tile registers
     acquire_dst();
-    add_tiles(cb_recv, cb_recv2, 0, 0, 0);
+    add_tiles(cb_recv2, cb_recv2, 0, 0, 0);
 
     tile_regs_commit();  // signal the packer
     tile_regs_wait();  // packer waits here
-    pack_tile(0, cb_local);
+    pack_tile(0, cb_recv2);
     release_dst();
     tile_regs_release();  // packer releases
     cb_pop_front(cb_compute, 1);

@@ -15,7 +15,7 @@ void MAIN {
     constexpr auto cb_in3 = tt::CBIndex::c_3;
     constexpr auto cb_out0 = tt::CBIndex::c_16;
 
-    binary_op_init_common(cb_in2, cb_in3, cb_out0);
+    binary_op_init_common(cb_out0, cb_out0, cb_out0);
     add_tiles_init();
 
     // wait for a block of tiles in each of input CBs
@@ -26,7 +26,7 @@ void MAIN {
 
     tile_regs_acquire();  // acquire 8 tile registers
 
-    add_tiles(cb_in2, cb_in3, 0, 0, 0);
+    add_tiles(cb_out0, cb_out0, 0, 0, 0);
 
     tile_regs_commit();  // signal the packer
 

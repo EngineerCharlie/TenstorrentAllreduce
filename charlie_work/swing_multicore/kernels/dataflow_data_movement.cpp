@@ -16,6 +16,9 @@ void kernel_main() {
     uint32_t src_dram_addr = get_arg_val<uint32_t>(7);
     uint32_t src_dram_noc_x = get_arg_val<uint32_t>(8);
     uint32_t src_dram_noc_y = get_arg_val<uint32_t>(9);
+    uint32_t dst_dram_addr = get_arg_val<uint32_t>(10);
+    uint32_t dst_dram_noc_x = get_arg_val<uint32_t>(11);
+    uint32_t dst_dram_noc_y = get_arg_val<uint32_t>(12);
 
     // define circular buffers
     constexpr uint32_t cb_local = tt::CBIndex::c_0;
@@ -68,16 +71,16 @@ void kernel_main() {
     uint32_t dst_core_y[num_swing_steps];
 
     for (int i = 0; i < (int)num_swing_steps; i++) {
-        dst_core_x[i] = get_arg_val<uint32_t>(10 + 2 * i);
-        dst_core_y[i] = get_arg_val<uint32_t>(11 + 2 * i);
+        dst_core_x[i] = get_arg_val<uint32_t>(13 + 2 * i);
+        dst_core_y[i] = get_arg_val<uint32_t>(14 + 2 * i);
     }
 
     // cb_reserve_back(cb_recv, in_arr_size);  // has to be before get_write_ptr??
     // cb_reserve_back(cb_local, in_arr_size);  // has to be before get_write_ptr??
 
     cb_wait_front(cb_noc, 1);
-    DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE
-           << " post wait val: " << local_array[0] <<" " << local_array[1] << ENDL();
+    DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " post wait val: " << recv2_array[0]
+           << " " << recv2_array[1] << ENDL();
     // DPRINT << "Core " << this_core_x << this_core_y << (uint32_t)this_core_SE << " " << recv_array[0] << " "
     //        << recv2_array[0] << ENDL();
     cb_pop_front(cb_noc, 1);
@@ -116,4 +119,10 @@ void kernel_main() {
     // cb_push_back(cb_recv, onetile);
     // cb_push_back(cb_local, onetile);
     // noc_async_write(src_dram_noc_addr, recv_addr, tile_size);
+    if (!this_core_SE && this_core_x == 1) {  // Read data from SRAM
+        uint64_t dst_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_dram_addr);
+
+        noc_async_write(recv2_addr, dst_noc_addr, tile_size);
+        noc_async_write_barrier();
+    }
 }
