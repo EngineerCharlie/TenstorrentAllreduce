@@ -28,23 +28,24 @@ void MAIN {
         } else {
             cb_push_back(cb_id_NW, 1);
         }
-        binary_op_init_common(cb_id_local, cb_id_local, cb_id_local);
+        cb_wait_front(cb_id_compute, 1);
+        cb_pop_front(cb_id_compute, 1);
+        binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
         add_tiles_init();
 
         // wait for a block of tiles in each of input CBs
 
         tile_regs_acquire();  // acquire 8 tile registers
 
-        add_tiles(cb_id_local, cb_id_local, 0, 0, 0);
+        add_tiles(cb_id_local, cb_id_recv, 0, 0, 0);
 
         tile_regs_commit();  // signal the packer
 
         tile_regs_wait();  // packer waits here
         pack_tile(0, cb_id_local);
         tile_regs_release();  // packer releases
+
         direction_SE = !direction_SE;
-        cb_wait_front(cb_id_compute, 1);
-        cb_pop_front(cb_id_compute, 1);
     }
 
     DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());

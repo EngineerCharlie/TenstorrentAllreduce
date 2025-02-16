@@ -78,12 +78,19 @@ void kernel_main() {
     uint64_t dst_noc_addr;
     for (uint32_t i = 0; i < swing_algo_steps; i++) {            
         if (this_core_SE == direction_SE) {
-            DPRINT << "Core " << this_core_x << this_core_y << (int)this_core_SE << " step: " << i << ENDL();
             dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0);
             dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1);
             dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
+            noc_semaphore_inc(dst_noc_semaphore_0, 1);
+            noc_semaphore_wait(semaphore_0_ptr, 1);
+            noc_semaphore_set(semaphore_0_ptr, 0);
+            noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
+            noc_async_write_barrier();
+            noc_semaphore_inc(dst_noc_semaphore_1, 1);
+            noc_semaphore_wait(semaphore_1_ptr, 1);
+            noc_semaphore_set(semaphore_1_ptr, 0);
             cb_push_back(cb_id_compute, 1);
         }
         direction_SE = !direction_SE;
