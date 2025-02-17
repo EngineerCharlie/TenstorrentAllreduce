@@ -24,10 +24,10 @@ int main(int argc, char** argv) {
     /* Setup program to execute along with its buffers and kernels to use */
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
-    const uint32_t core_arr_size = 4;
-    const uint32_t swing_algo_steps = 2;  // log2(core_arr_size)
+    const uint32_t core_arr_size = 8;
+    const uint32_t swing_algo_steps = 3;  // log2(core_arr_size)
     CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {3, 0};
+    CoreCoord end_core = {7, 0};
     CoreRange cores(start_core, end_core);
 
     std::array<CoreCoord, core_arr_size> core_array;
@@ -189,6 +189,14 @@ int main(int argc, char** argv) {
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
     printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
     // Unpack the two bfloat16 values from the packed uint32_t
+    int array_size = single_tile_size/sizeof(uint32_t);
+    for (int i=0;i<array_size; i+=10){
+        auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
+        // Convert the unpacked bfloat16 values back to float for printing
+        float first_bfloat_value = two_bfloats.first.to_float();
+        float second_bfloat_value = two_bfloats.second.to_float();
+        printf("First bfloat to int = %d\n", (int)first_bfloat_value);    // 22 = 1102070192
+    }
     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
     // Convert the unpacked bfloat16 values back to float for printing
@@ -196,7 +204,9 @@ int main(int argc, char** argv) {
     float second_bfloat_value = two_bfloats.second.to_float();
     printf("Result (nocast) = %d\n", result_vec[0]);                  // 22 = 1102070192
     printf("First bfloat to int = %d\n", (int)first_bfloat_value);    // 22 = 1102070192
-    printf("Second bfloat to int = %d\n", (int)second_bfloat_value);  // 22 = 1102070192
+
+
+
     printf(
         "Expected = %d (or in human fkin numbers = %d\n",
         pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(28.0f), bfloat16(28.0f))),
