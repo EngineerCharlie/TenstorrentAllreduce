@@ -70,6 +70,11 @@ int main(int argc, char** argv) {
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src4_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(src4_cb_index, single_tile_size);
     CBHandle cb_src4 = tt_metal::CreateCircularBuffer(program, core, cb_src4_config);
+    constexpr uint32_t src5_cb_index = CBIndex::c_5;
+    CircularBufferConfig cb_src5_config =
+        CircularBufferConfig(num_input_tiles * single_tile_size, {{src5_cb_index, tt::DataFormat::Float16_b}})
+            .set_page_size(src5_cb_index, single_tile_size);
+    CBHandle cb_src5 = tt_metal::CreateCircularBuffer(program, core, cb_src5_config);
 
     constexpr uint32_t output_cb_index = CBIndex::c_16;
     constexpr uint32_t num_output_tiles = 1;

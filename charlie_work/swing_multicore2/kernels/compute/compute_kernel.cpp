@@ -32,27 +32,26 @@ void MAIN {
             cb_push_back(cb_id_NW, 1);
         }
 
-        //Await signal from NOC that data is on local memory
+        // Await signal from NOC that data is on local memory
         cb_wait_front(cb_id_compute, 1);
         cb_pop_front(cb_id_compute, 1);
 
-        //add vectors
+        // add vectors
 
         tile_regs_acquire();
         add_tiles(cb_id_local, cb_id_recv, 0, 0, 0);
         tile_regs_commit();
 
-        tile_regs_wait(); 
+        tile_regs_wait();
+        cb_reserve_back(cb_id_local, 1);
         pack_tile(0, cb_id_local);
+        cb_push_back(cb_id_local, 1);
         tile_regs_release();
-        
+
         direction_SE = !direction_SE;
     }
-    if (direction_SE) {
-        cb_push_back(cb_id_SE, 1);
-    } else {
-        cb_push_back(cb_id_NW, 1);
-    }
+    cb_push_back(cb_id_SE, 1);
+    cb_push_back(cb_id_NW, 1);
     DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
 }
 }  // namespace NAMESPACE

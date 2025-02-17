@@ -18,28 +18,22 @@ void kernel_main() {
 
     constexpr uint32_t cb_id_in0 = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_in1 = tt::CBIndex::c_1;
-    constexpr uint32_t cb_id_in2 = tt::CBIndex::c_2;
-    constexpr uint32_t cb_id_in3 = tt::CBIndex::c_3;
-    constexpr auto cb_out0 = tt::CBIndex::c_16;
-    
+
     // single-tile ublocks
     uint32_t ublock_size_bytes_0 = get_tile_size(cb_id_in0);
     uint32_t ublock_size_bytes_1 = get_tile_size(cb_id_in1);
 
     uint32_t l1_write_addr_in0 = get_write_ptr(cb_id_in0);
     uint32_t l1_write_addr_in1 = get_write_ptr(cb_id_in1);
-    uint32_t l1_write_addr_in2 = get_write_ptr(cb_id_in2);
-    uint32_t l1_write_addr_in3 = get_write_ptr(cb_id_in3);
-    uint32_t l1_write_addr_out0 = get_write_ptr(cb_out0);
 
     // read ublocks from src0/src1 to CB0/CB1, then push ublocks to compute (unpacker)
     cb_reserve_back(cb_id_in0, 1);
-    noc_async_read(src0_noc_addr, l1_write_addr_out0, ublock_size_bytes_0);
+    noc_async_read(src0_noc_addr, l1_write_addr_in0, ublock_size_bytes_0);
     noc_async_read_barrier();
     cb_push_back(cb_id_in0, 1);
 
     cb_reserve_back(cb_id_in1, 1);
-    noc_async_read(src1_noc_addr, l1_write_addr_in3, ublock_size_bytes_1);
+    noc_async_read(src1_noc_addr, l1_write_addr_in1, ublock_size_bytes_1);
     noc_async_read_barrier();
     cb_push_back(cb_id_in1, 1);
 }

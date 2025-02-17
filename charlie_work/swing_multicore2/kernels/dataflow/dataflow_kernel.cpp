@@ -87,6 +87,7 @@ void kernel_main() {
             cb_pop_front(cb_id_this, 1);
             cb_reserve_back(cb_id_compute,1);
             
+            
             //await first sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_0, this_core_x);
             noc_semaphore_wait(semaphore_0_ptr, dst_core_x[i]);
@@ -95,6 +96,7 @@ void kernel_main() {
             //write local array to com partner
             noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
             noc_async_write_barrier();
+            cb_pop_front(cb_id_local, 1);
 
             //await second sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_1, this_core_x);
@@ -104,9 +106,9 @@ void kernel_main() {
         }
         direction_SE = !direction_SE;
     }
+    cb_wait_front(cb_id_this, 1);
+    cb_pop_front(cb_id_this, 1);
     if (this_core_SE == direction_SE){
-        cb_wait_front(cb_id_this, 1);
-        cb_pop_front(cb_id_this, 1);
         noc_async_write(l1_write_addr_local, host_noc_addr, ublock_size_bytes_data);
         noc_async_write_barrier();
     }
