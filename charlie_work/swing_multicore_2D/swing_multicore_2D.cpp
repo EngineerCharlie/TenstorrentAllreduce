@@ -1,4 +1,3 @@
-
 // SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -64,36 +63,36 @@ int main(int argc, char** argv) {
     {
         constexpr uint32_t semaphore_tile_size = 32;
 
-        constexpr uint32_t compute_cb_index = CBIndex::c_0;
-        CircularBufferConfig cb_compute_config =
-            CircularBufferConfig(semaphore_tile_size, {{compute_cb_index, tt::DataFormat::Float16_b}})
-                .set_page_size(compute_cb_index, semaphore_tile_size);
-        CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_compute_config);
+        constexpr uint32_t cb_index_compute = CBIndex::c_0;
+        CircularBufferConfig cb_config_compute =
+            CircularBufferConfig(semaphore_tile_size, {{cb_index_compute, tt::DataFormat::Float16_b}})
+                .set_page_size(cb_index_compute, semaphore_tile_size);
+        CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
 
-        constexpr uint32_t NW_cb_index = CBIndex::c_1;
-        CircularBufferConfig cb_NW_config =
-            CircularBufferConfig(semaphore_tile_size, {{NW_cb_index, tt::DataFormat::Float16_b}})
-                .set_page_size(NW_cb_index, semaphore_tile_size);
-        CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_NW_config);
+        constexpr uint32_t cb_index_NW = CBIndex::c_1;
+        CircularBufferConfig cb_config_NW =
+            CircularBufferConfig(semaphore_tile_size, {{cb_index_NW, tt::DataFormat::Float16_b}})
+                .set_page_size(cb_index_NW, semaphore_tile_size);
+        CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
 
-        constexpr uint32_t SE_cb_index = CBIndex::c_2;
-        CircularBufferConfig cb_SE_config =
-            CircularBufferConfig(semaphore_tile_size, {{SE_cb_index, tt::DataFormat::Float16_b}})
-                .set_page_size(SE_cb_index, semaphore_tile_size);
-        CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_SE_config);
+        constexpr uint32_t cb_index_SE = CBIndex::c_2;
+        CircularBufferConfig cb_config_SE =
+            CircularBufferConfig(semaphore_tile_size, {{cb_index_SE, tt::DataFormat::Float16_b}})
+                .set_page_size(cb_index_SE, semaphore_tile_size);
+        CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
 
-        constexpr uint32_t recv_cb_index = CBIndex::c_3;
-        CircularBufferConfig cb_recv_config =
-            CircularBufferConfig(num_input_tiles * single_tile_size, {{recv_cb_index, tt::DataFormat::Float16_b}})
-                .set_page_size(recv_cb_index, single_tile_size);
-        CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_recv_config);
+        constexpr uint32_t cb_index_recv = CBIndex::c_3;
+        CircularBufferConfig cb_config_recv =
+            CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, tt::DataFormat::Float16_b}})
+                .set_page_size(cb_index_recv, single_tile_size);
+        CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
-        constexpr uint32_t local_cb_index = CBIndex::c_16;
+        constexpr uint32_t cb_index_local = CBIndex::c_16;
         constexpr uint32_t num_output_tiles = 1;
-        CircularBufferConfig cb_output_config =
-            CircularBufferConfig(num_output_tiles * single_tile_size, {{local_cb_index, tt::DataFormat::Float16_b}})
-                .set_page_size(local_cb_index, single_tile_size);
-        CBHandle cb_output = tt_metal::CreateCircularBuffer(program, cores, cb_output_config);
+        CircularBufferConfig cb_config_local =
+            CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, tt::DataFormat::Float16_b}})
+                .set_page_size(cb_index_local, single_tile_size);
+        CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
     }
 
     uint32_t semaphore_0 = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
@@ -206,11 +205,10 @@ int main(int argc, char** argv) {
     printf("Result (nocast) = %d\n", result_vec[0]);                  // 22 = 1102070192
     printf("First bfloat to int = %d\n", (int)first_bfloat_value);    // 22 = 1102070192
 
-
-
     printf(
-        "Expected = %d (or in human fkin numbers = %d\n",
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(bfloat16(28.0f), bfloat16(28.0f))),
-        28);
+        "Expected = %d (or in human numbers = %d\n",
+        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+            bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
+        14 * core_arr_size);
     CloseDevice(device);
 }
