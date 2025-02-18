@@ -13,26 +13,34 @@ void MAIN {
     uint32_t this_core_x = get_arg_val<uint32_t>(1);
     uint32_t this_core_y = get_arg_val<uint32_t>(2);
     bool direction_SE = (bool)get_arg_val<uint32_t>(3);
-
+    uint32_t packed_bools = get_arg_val<uint32_t>(4);
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
-    constexpr auto cb_id_local = tt::CBIndex::c_16;
+    constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
     cb_wait_front(cb_id_compute, 1);
+
     cb_pop_front(cb_id_compute, 1);
+
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init();
 
+    bool SE;
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         // Signal appropriate NOC core to exchange data with other core
-        if (direction_SE) {
+        SE = (packed_bools >> i) & 1;  // Extract bit i
+        // if (this_core_x == 1)
+        // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " SE? " << (int) SE << ENDL());
+
+        if (SE) {
             cb_push_back(cb_id_SE, 1);
         } else {
             cb_push_back(cb_id_NW, 1);
         }
 
         // Await signal from NOC that data is on local memory
+        DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " step " << i << ENDL());
         cb_wait_front(cb_id_compute, 1);
         cb_pop_front(cb_id_compute, 1);
 

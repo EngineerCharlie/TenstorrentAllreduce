@@ -5,9 +5,13 @@
 #include "tt_metal/host_api.hpp"
 #include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/bfloat16.hpp"
+#include <array>
 
 using namespace tt;
 using namespace tt::tt_metal;
+
+const int SIDE_LENGTH = 8;
+const int MAX_NODES = 64;
 
 int ceil_div(int a, int b) { return (a + b - 1) / b; }
 
@@ -17,6 +21,66 @@ int get_comm_partner(int node, int step, int num_nodes) {
     return (uncorrected_comm_partner + num_nodes) % num_nodes;
 }
 
+int get_comm_partner_2D(int node, int step, bool horizontal_step) {
+    int row = node / SIDE_LENGTH;
+    int col = node % SIDE_LENGTH;
+    step = step / 2;
+
+    // straight line distnce
+    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
+
+    int comm_partner;
+    if (horizontal_step) {
+        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
+        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
+            comm_partner += SIDE_LENGTH;
+        } else if (comm_partner / SIDE_LENGTH > row) {
+            comm_partner -= SIDE_LENGTH;
+        }
+    } else {
+        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
+        if (comm_partner < 0) {
+            comm_partner += MAX_NODES;
+        } else if (comm_partner >= MAX_NODES) {
+            comm_partner -= MAX_NODES;
+        }
+    }
+    return comm_partner;  // will  loop round  to  always be in  range
+}
+
+// std::array<bool, 6> get_SE(int node_x, int node_y) {
+//     if (node_x % 2 == 0) {
+//         if (node_y % 2 == 0) {  // node 0,0
+//             return {true, true, false, false, true, true};
+//         } else {  // node 0,1
+//             return {true, false, false, true, true, false};
+//         }
+//     } else {  // node 1,0
+//         if (node_y % 2 == 0) {
+//             return {false, true, true, false, false, true};
+//         } else {  // node 1,1
+//             return {false, false, true, true, false, false};
+//         }
+//     }
+// }
+
+// Returns a uint32_t where bits 0-5 store boolean direction_SE
+uint32_t get_SE(int node_x, int node_y) {
+    if (node_x % 2 == 0) {
+        if (node_y % 2 == 0) {  // node 0,0
+            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
+        } else {                // node 0,1
+            return 0b100110;    // Binary: 100110 (true, false, false, true, true, false)
+        }
+    } else {  // node 1,0
+        if (node_y % 2 == 0) {
+            return 0b011001;  // Binary: 011001 (false, true, true, false, false, true)
+        } else {              // node 1,1
+            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     /* Silicon accelerator setup */
     Device* device = CreateDevice(0);
@@ -24,10 +88,10 @@ int main(int argc, char** argv) {
     /* Setup program to execute along with its buffers and kernels to use */
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
-    const uint32_t core_arr_size = 8;
-    const uint32_t swing_algo_steps = 3;  // log2(core_arr_size)
+    const uint32_t core_arr_size = 64;
+    const uint32_t swing_algo_steps = 6;  // log2(core_arr_size)
     CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {7, 0};
+    CoreCoord end_core = {7, 7};
     CoreRange cores(start_core, end_core);
 
     std::array<CoreCoord, core_arr_size> core_array;
@@ -104,7 +168,7 @@ int main(int argc, char** argv) {
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
-    std::vector<uint32_t> dataflow_args(15 + 2 * swing_algo_steps);
+    std::vector<uint32_t> dataflow_args(14 + 3 * swing_algo_steps);
     dataflow_args[0] = src_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[2] = src_dram_noc_x;
@@ -114,38 +178,56 @@ int main(int argc, char** argv) {
     dataflow_args[6] = swing_algo_steps;
     dataflow_args[7] = semaphore_0;
     dataflow_args[8] = semaphore_1;
+    for (int i = 0; i < swing_algo_steps; i++) {
+        dataflow_args[14 + 2 * swing_algo_steps + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+    }
 
-    std::vector<uint32_t> compute_args(4);
+    std::vector<uint32_t> compute_args(5+2*swing_algo_steps);
     compute_args[0] = swing_algo_steps;
+
 
     KernelHandle dataflow_kernel;
     KernelHandle compute_kernel;
     CoreCoord logical_core;
     CoreCoord physical_core;
     bool start_direction_SE = true;
-
+    bool horizontal_step;
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(core_array[core_i]);
-
-        /* Set the parameters that the dataflow kernel will use */
         dataflow_args[9] = (uint32_t)physical_core.x;
         dataflow_args[10] = (uint32_t)physical_core.y;
+        compute_args[1] = (uint32_t)physical_core.x;
+        compute_args[2] = (uint32_t)physical_core.y;
+
+        /* Set the parameters that the dataflow kernel will use */
         dataflow_args[11] = (uint32_t)true;  // this_core_SE
         dataflow_args[12] = (uint32_t)start_direction_SE;
+        dataflow_args[13] = get_SE(core_array[core_i].x, core_array[core_i].y);
+
+        horizontal_step = true;
         for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
-            logical_core = {get_comm_partner(core_i, swing_step, core_arr_size), 0};
+            // logical_core = {get_comm_partner(core_i, swing_step, core_arr_size), 0};
+            int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step);
+            logical_core = core_array[comm_partner_idx];
             physical_core = device->worker_core_from_logical_core(logical_core);
 
-            // printf("Core (%d,%d) step %d partner (%d, %d)\n", core_i, 0, j, (int)physical_core.x,
-            // (int)physical_core.y);
-            dataflow_args[13 + 2 * swing_step] = {(uint32_t)physical_core.x};
-            dataflow_args[14 + 2 * swing_step] = {(uint32_t)physical_core.y};
+            // printf(
+            //     "Core (%d,%d) step %d partner (%d, %d)\n",
+            //     (int)dataflow_args[9],
+            //     (int)dataflow_args[10],
+            //     swing_step,
+            //     // comm_partner_idx,
+            //     (int)physical_core.x,
+            //     (int)physical_core.y);
+            dataflow_args[14 + 2 * swing_step] = (uint32_t)physical_core.x;
+            dataflow_args[15 + 2 * swing_step] = (uint32_t)physical_core.y;
+            horizontal_step = !horizontal_step;
         }
         /* Specify data movement kernels for reading/writing data to/from DRAM */
         dataflow_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
             "dataflow/dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
@@ -154,21 +236,19 @@ int main(int argc, char** argv) {
         dataflow_args[11] = (uint32_t)false;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
             "dataflow/dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
         /* Set the parameters that the compute kernel will use */
-        compute_args[1] = (uint32_t)physical_core.x;
-        compute_args[2] = (uint32_t)physical_core.y;
         compute_args[3] = (uint32_t)start_direction_SE;
-
+        compute_args[4] = get_SE(core_array[core_i].x, core_array[core_i].y);
         /* Use the add_tiles operation in the compute kernel */
         compute_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
             "compute/compute_kernel.cpp",
             core_array[core_i],
             ComputeConfig{
@@ -187,28 +267,28 @@ int main(int argc, char** argv) {
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
-    printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
+    // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
     // Unpack the two bfloat16 values from the packed uint32_t
-    int array_size = single_tile_size/sizeof(uint32_t);
-    for (int i=0;i<array_size; i+=10){
+    int array_size = single_tile_size / sizeof(uint32_t);
+    for (int i = 0; i < array_size; i += 10) {
         auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
         // Convert the unpacked bfloat16 values back to float for printing
         float first_bfloat_value = two_bfloats.first.to_float();
         float second_bfloat_value = two_bfloats.second.to_float();
-        printf("First bfloat to int = %d\n", (int)first_bfloat_value);    // 22 = 1102070192
+        // printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
     }
     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
     // Convert the unpacked bfloat16 values back to float for printing
     float first_bfloat_value = two_bfloats.first.to_float();
     float second_bfloat_value = two_bfloats.second.to_float();
-    printf("Result (nocast) = %d\n", result_vec[0]);                  // 22 = 1102070192
-    printf("First bfloat to int = %d\n", (int)first_bfloat_value);    // 22 = 1102070192
+    printf("Result (nocast) = %d\n", result_vec[0]);                // 22 = 1102070192
+    printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
 
-    printf(
-        "Expected = %d (or in human numbers = %d\n",
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
-        14 * core_arr_size);
+    // printf(
+    //     "Expected = %d (or in human numbers = %d\n",
+    //     pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+    //         bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
+    //     14 * core_arr_size);
     CloseDevice(device);
 }

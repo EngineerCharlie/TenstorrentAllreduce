@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
         /* Specify data movement kernels for reading/writing data to/from DRAM */
         dataflow_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_1D/kernels/"
             "dataflow/dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
         dataflow_args[11] = (uint32_t)false;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_1D/kernels/"
             "dataflow/dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
         /* Use the add_tiles operation in the compute kernel */
         compute_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore2/kernels/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_1D/kernels/"
             "compute/compute_kernel.cpp",
             core_array[core_i],
             ComputeConfig{
