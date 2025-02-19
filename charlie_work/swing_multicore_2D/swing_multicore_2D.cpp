@@ -6,64 +6,17 @@
 #include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/bfloat16.hpp"
 #include <array>
+#include <cmath>  // For std::log2
+#include <cstdint>
 
 using namespace tt;
 using namespace tt::tt_metal;
 
-const int SIDE_LENGTH = 8;
-const int MAX_NODES = 64;
-
-int ceil_div(int a, int b) { return (a + b - 1) / b; }
-
-int get_comm_partner(int node, int step, int num_nodes) {
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-    int uncorrected_comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);
-    return (uncorrected_comm_partner + num_nodes) % num_nodes;
-}
-
-int get_comm_partner_2D(int node, int step, bool horizontal_step) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    step = step / 2;
-
-    // straight line distnce
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-
-    int comm_partner;
-    if (horizontal_step) {
-        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
-        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
-            comm_partner += SIDE_LENGTH;
-        } else if (comm_partner / SIDE_LENGTH > row) {
-            comm_partner -= SIDE_LENGTH;
-        }
-    } else {
-        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
-        if (comm_partner < 0) {
-            comm_partner += MAX_NODES;
-        } else if (comm_partner >= MAX_NODES) {
-            comm_partner -= MAX_NODES;
-        }
-    }
-    return comm_partner;  // will  loop round  to  always be in  range
-}
-
-// Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
-    if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b100110;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b011001;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
-    }
-}
+int ceil_div(int, int);
+int get_comm_partner(int, int, int);
+int get_comm_partner_2D(int, int, bool, int, int);
+uint32_t get_SE(int, int);
+int highest_power_of_two(int);
 
 int main(int argc, char** argv) {
     /* Silicon accelerator setup */
@@ -72,19 +25,22 @@ int main(int argc, char** argv) {
     /* Setup program to execute along with its buffers and kernels to use */
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
-    const uint32_t core_arr_size = 64;
-    const uint32_t swing_algo_steps = 6;  // log2(core_arr_size)
+
+    /*Setup core array (full grid or subsection)*/
+    int SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
+    uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
+    uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
     CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {7, 7};
+    CoreCoord end_core = {SIDE_LENGTH - 1, SIDE_LENGTH - 1};
     CoreRange cores(start_core, end_core);
 
-    std::array<CoreCoord, core_arr_size> core_array;
+    std::vector<CoreCoord> core_array(TOTAL_NODES);
     for (uint32_t i = 0; i < core_array.size(); i++) {
-        core_array[i] = {i % 8, i / 8};
+        core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
     /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 1024;
+    constexpr uint32_t single_tile_size = 1 * 512;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -143,21 +99,21 @@ int main(int argc, char** argv) {
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(11 + 8 + 2 * swing_algo_steps); //args + semaphore + NOC partners
+    std::vector<uint32_t> dataflow_args(11 + 8 + 2 * SWING_ALGO_STEPS);  // args + semaphore + NOC partners
     dataflow_args[0] = src_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[2] = src_dram_noc_x;
     dataflow_args[3] = src_dram_noc_y;
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
-    dataflow_args[6] = swing_algo_steps;
+    dataflow_args[6] = SWING_ALGO_STEPS;
     for (int i = 0; i < 8; i++) {
-        dataflow_args[11 + 2 * swing_algo_steps + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+        dataflow_args[11 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
     /*Compute kernel arg initialization*/
     std::vector<uint32_t> compute_args(4);
-    compute_args[0] = swing_algo_steps;
+    compute_args[0] = SWING_ALGO_STEPS;
 
     /*reused variable initialization*/
     KernelHandle dataflow_kernel;
@@ -175,7 +131,7 @@ int main(int argc, char** argv) {
         dataflow_args[8] = (uint32_t)physical_core.y;
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
-        
+
         /*Order of operations (whether each step is NW or SE NOC)*/
         dataflow_args[10] = get_SE(core_array[core_i].x, core_array[core_i].y);
         compute_args[3] = get_SE(core_array[core_i].x, core_array[core_i].y);
@@ -184,8 +140,8 @@ int main(int argc, char** argv) {
 
         /*Swing algo partner node calculations*/
         horizontal_step = true;
-        for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
-            int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step);
+        for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step += 1) {
+            int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
             logical_core = core_array[comm_partner_idx];
             physical_core = device->worker_core_from_logical_core(logical_core);
             dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
@@ -193,7 +149,7 @@ int main(int argc, char** argv) {
             horizontal_step = !horizontal_step;
         }
 
-        /*NW Kernel*/
+        /*SE Kernel*/
         dataflow_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
@@ -202,7 +158,7 @@ int main(int argc, char** argv) {
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
-        /*SE Kernel*/
+        /*NW Kernel*/
         dataflow_args[9] = (uint32_t)false;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
@@ -255,7 +211,72 @@ int main(int argc, char** argv) {
     printf(
         "Expected = %d (or in human numbers = %d\n",
         pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
-        14 * core_arr_size);
+            bfloat16((float)14 * (float)TOTAL_NODES), bfloat16((float)14 * (float)TOTAL_NODES))),
+        14 * TOTAL_NODES);
     CloseDevice(device);
+}
+
+int ceil_div(int a, int b) { return (a + b - 1) / b; }
+
+int get_comm_partner(int node, int step, int num_nodes) {
+    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
+    int uncorrected_comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);
+    return (uncorrected_comm_partner + num_nodes) % num_nodes;
+}
+
+int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
+    int row = node / SIDE_LENGTH;
+    int col = node % SIDE_LENGTH;
+    step = step / 2;
+
+    // straight line distnce
+    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
+
+    int comm_partner;
+    if (horizontal_step) {
+        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
+        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
+            comm_partner += SIDE_LENGTH;
+        } else if (comm_partner / SIDE_LENGTH > row) {
+            comm_partner -= SIDE_LENGTH;
+        }
+    } else {
+        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
+        if (comm_partner < 0) {
+            comm_partner += TOTAL_NODES;
+        } else if (comm_partner >= TOTAL_NODES) {
+            comm_partner -= TOTAL_NODES;
+        }
+    }
+    return comm_partner;  // will  loop round  to  always be in  range
+}
+
+// Returns a uint32_t where bits 0-5 store boolean direction_SE
+uint32_t get_SE(int node_x, int node_y) {
+    if (node_x % 2 == 0) {
+        if (node_y % 2 == 0) {  // node 0,0
+            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
+        } else {                // node 0,1
+            return 0b100110;    // Binary: 100110 (true, false, false, true, true, false)
+        }
+    } else {  // node 1,0
+        if (node_y % 2 == 0) {
+            return 0b011001;  // Binary: 011001 (false, true, true, false, false, true)
+        } else {              // node 1,1
+            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
+        }
+    }
+}
+
+int highest_power_of_two(int value) {
+    if (value >= 8) {
+        return 8;
+    }
+    if (value >= 4) {
+        return 4;
+    }
+    if (value >= 2) {
+        return 2;
+    }
+    return 1;
 }
