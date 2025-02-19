@@ -12,15 +12,13 @@ void MAIN {
     uint32_t swing_algo_steps = get_arg_val<uint32_t>(0);
     uint32_t this_core_x = get_arg_val<uint32_t>(1);
     uint32_t this_core_y = get_arg_val<uint32_t>(2);
-    bool direction_SE = (bool)get_arg_val<uint32_t>(3);
-    uint32_t packed_bools = get_arg_val<uint32_t>(4);
+    uint32_t packed_bools = get_arg_val<uint32_t>(3);
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
     cb_wait_front(cb_id_compute, 1);
-
     cb_pop_front(cb_id_compute, 1);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
@@ -40,7 +38,7 @@ void MAIN {
         }
 
         // Await signal from NOC that data is on local memory
-        DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " step " << i << ENDL());
+        // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " step " << i << ENDL());
         cb_wait_front(cb_id_compute, 1);
         cb_pop_front(cb_id_compute, 1);
 
@@ -56,7 +54,7 @@ void MAIN {
         cb_push_back(cb_id_local, 1);
         tile_regs_release();
 
-        direction_SE = !direction_SE;
+        // direction_SE = !direction_SE;
     }
     cb_push_back(cb_id_SE, 1);
     cb_push_back(cb_id_NW, 1);

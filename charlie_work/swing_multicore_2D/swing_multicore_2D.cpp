@@ -96,16 +96,10 @@ int main(int argc, char** argv) {
 
     std::array<CoreCoord, core_arr_size> core_array;
     for (uint32_t i = 0; i < core_array.size(); i++) {
-        core_array[i] = {i % 8, i / 8};  // y is fixed at 0, x ranges from 0 to 7
-        // printf(
-        //     "Core (%d, %d) is physical core (%d, %d)\n",
-        //     i % 8,
-        //     i / 8,
-        //     static_cast<uint32_t>(core_array[i].x),
-        //     static_cast<uint32_t>(core_array[i].y));
+        core_array[i] = {i % 8, i / 8};
     }
 
-    constexpr uint32_t single_tile_size = 2 * 1024;
+    constexpr uint32_t single_tile_size = 1 * 1024;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -124,43 +118,38 @@ int main(int argc, char** argv) {
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     constexpr uint32_t num_input_tiles = 1;
-    {
-        constexpr uint32_t semaphore_tile_size = 32;
+    constexpr uint32_t semaphore_tile_size = 32;
 
-        constexpr uint32_t cb_index_compute = CBIndex::c_0;
-        CircularBufferConfig cb_config_compute =
-            CircularBufferConfig(semaphore_tile_size, {{cb_index_compute, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_index_compute, semaphore_tile_size);
-        CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
+    constexpr uint32_t cb_index_compute = CBIndex::c_0;
+    CircularBufferConfig cb_config_compute =
+        CircularBufferConfig(semaphore_tile_size, {{cb_index_compute, tt::DataFormat::Float16_b}})
+            .set_page_size(cb_index_compute, semaphore_tile_size);
+    CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
 
-        constexpr uint32_t cb_index_NW = CBIndex::c_1;
-        CircularBufferConfig cb_config_NW =
-            CircularBufferConfig(semaphore_tile_size, {{cb_index_NW, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_index_NW, semaphore_tile_size);
-        CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
+    constexpr uint32_t cb_index_NW = CBIndex::c_1;
+    CircularBufferConfig cb_config_NW =
+        CircularBufferConfig(semaphore_tile_size, {{cb_index_NW, tt::DataFormat::Float16_b}})
+            .set_page_size(cb_index_NW, semaphore_tile_size);
+    CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
 
-        constexpr uint32_t cb_index_SE = CBIndex::c_2;
-        CircularBufferConfig cb_config_SE =
-            CircularBufferConfig(semaphore_tile_size, {{cb_index_SE, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_index_SE, semaphore_tile_size);
-        CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
+    constexpr uint32_t cb_index_SE = CBIndex::c_2;
+    CircularBufferConfig cb_config_SE =
+        CircularBufferConfig(semaphore_tile_size, {{cb_index_SE, tt::DataFormat::Float16_b}})
+            .set_page_size(cb_index_SE, semaphore_tile_size);
+    CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
 
-        constexpr uint32_t cb_index_recv = CBIndex::c_3;
-        CircularBufferConfig cb_config_recv =
-            CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_index_recv, single_tile_size);
-        CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
+    constexpr uint32_t cb_index_recv = CBIndex::c_3;
+    CircularBufferConfig cb_config_recv =
+        CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, tt::DataFormat::Float16_b}})
+            .set_page_size(cb_index_recv, single_tile_size);
+    CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
-        constexpr uint32_t cb_index_local = CBIndex::c_16;
-        constexpr uint32_t num_output_tiles = 1;
-        CircularBufferConfig cb_config_local =
-            CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_index_local, single_tile_size);
-        CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
-    }
-
-    uint32_t semaphore_0 = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
-    uint32_t semaphore_1 = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+    constexpr uint32_t cb_index_local = CBIndex::c_16;
+    constexpr uint32_t num_output_tiles = 1;
+    CircularBufferConfig cb_config_local =
+        CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, tt::DataFormat::Float16_b}})
+            .set_page_size(cb_index_local, single_tile_size);
+    CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
@@ -176,15 +165,12 @@ int main(int argc, char** argv) {
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = swing_algo_steps;
-    dataflow_args[7] = semaphore_0;
-    dataflow_args[8] = semaphore_1;
-    for (int i = 0; i < swing_algo_steps; i++) {
-        dataflow_args[14 + 2 * swing_algo_steps + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+    for (int i = 0; i < swing_algo_steps + 2; i++) {
+        dataflow_args[11 + 2 * swing_algo_steps + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
-    std::vector<uint32_t> compute_args(5+2*swing_algo_steps);
+    std::vector<uint32_t> compute_args(4);
     compute_args[0] = swing_algo_steps;
-
 
     KernelHandle dataflow_kernel;
     KernelHandle compute_kernel;
@@ -195,15 +181,14 @@ int main(int argc, char** argv) {
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(core_array[core_i]);
-        dataflow_args[9] = (uint32_t)physical_core.x;
-        dataflow_args[10] = (uint32_t)physical_core.y;
+        dataflow_args[7] = (uint32_t)physical_core.x;
+        dataflow_args[8] = (uint32_t)physical_core.y;
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
 
         /* Set the parameters that the dataflow kernel will use */
-        dataflow_args[11] = (uint32_t)true;  // this_core_SE
-        dataflow_args[12] = (uint32_t)start_direction_SE;
-        dataflow_args[13] = get_SE(core_array[core_i].x, core_array[core_i].y);
+        dataflow_args[9] = (uint32_t)true;  // this_core_SE
+        dataflow_args[10] = get_SE(core_array[core_i].x, core_array[core_i].y);
 
         horizontal_step = true;
         for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
@@ -220,8 +205,8 @@ int main(int argc, char** argv) {
             //     // comm_partner_idx,
             //     (int)physical_core.x,
             //     (int)physical_core.y);
-            dataflow_args[14 + 2 * swing_step] = (uint32_t)physical_core.x;
-            dataflow_args[15 + 2 * swing_step] = (uint32_t)physical_core.y;
+            dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
+            dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.y;
             horizontal_step = !horizontal_step;
         }
         /* Specify data movement kernels for reading/writing data to/from DRAM */
@@ -233,7 +218,7 @@ int main(int argc, char** argv) {
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
-        dataflow_args[11] = (uint32_t)false;  // this_core_SE
+        dataflow_args[9] = (uint32_t)false;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
@@ -243,8 +228,7 @@ int main(int argc, char** argv) {
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
         /* Set the parameters that the compute kernel will use */
-        compute_args[3] = (uint32_t)start_direction_SE;
-        compute_args[4] = get_SE(core_array[core_i].x, core_array[core_i].y);
+        compute_args[3] = get_SE(core_array[core_i].x, core_array[core_i].y);
         /* Use the add_tiles operation in the compute kernel */
         compute_kernel = CreateKernel(
             program,
@@ -258,7 +242,6 @@ int main(int argc, char** argv) {
                 .compile_args = compute_args,
             });
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
-        start_direction_SE = !start_direction_SE;
     }
 
     EnqueueProgram(cq, program, false);
@@ -275,20 +258,21 @@ int main(int argc, char** argv) {
         // Convert the unpacked bfloat16 values back to float for printing
         float first_bfloat_value = two_bfloats.first.to_float();
         float second_bfloat_value = two_bfloats.second.to_float();
-        // printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+        printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
     }
     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
     // Convert the unpacked bfloat16 values back to float for printing
     float first_bfloat_value = two_bfloats.first.to_float();
     float second_bfloat_value = two_bfloats.second.to_float();
-    printf("Result (nocast) = %d\n", result_vec[0]);                // 22 = 1102070192
-    printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+    printf("Result (nocast) = %d\n", result_vec[0]);  // 22 = 1102070192
+    printf(
+        "First bfloat to int = %d second %d\n", (int)first_bfloat_value, (int)second_bfloat_value);  // 22 = 1102070192
 
-    // printf(
-    //     "Expected = %d (or in human numbers = %d\n",
-    //     pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-    //         bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
-    //     14 * core_arr_size);
+    printf(
+        "Expected = %d (or in human numbers = %d\n",
+        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+            bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
+        14 * core_arr_size);
     CloseDevice(device);
 }
