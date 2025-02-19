@@ -27,8 +27,10 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     /*Setup core array (full grid or subsection)*/
-    int SIDE_LENGTH if (argc >= 2) { SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1])); }
-    else {
+    int SIDE_LENGTH;
+    if (argc >= 2) {
+        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
+    } else {
         SIDE_LENGTH = 8;
     }
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
@@ -43,7 +45,7 @@ int main(int argc, char** argv) {
     }
 
     /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 512;
+    constexpr uint32_t single_tile_size = 1 * 1024;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -62,6 +64,7 @@ int main(int argc, char** argv) {
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     constexpr uint32_t num_input_tiles = 1;
+    constexpr uint32_t num_output_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
@@ -88,7 +91,6 @@ int main(int argc, char** argv) {
     CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
     constexpr uint32_t cb_index_local = CBIndex::c_16;
-    constexpr uint32_t num_output_tiles = 1;
     CircularBufferConfig cb_config_local =
         CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, data_format}})
             .set_page_size(cb_index_local, single_tile_size);
@@ -97,8 +99,11 @@ int main(int argc, char** argv) {
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
     src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+    std::vector<uint32_t> result_vec;
+    result_vec = create_constant_vector_of_bfloat16(single_tile_size, 0.0f);
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
+    EnqueueWriteBuffer(cq, dst_dram_buffer, result_vec, false);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(11 + 8 + 2 * SWING_ALGO_STEPS);  // args + semaphore + NOC partners
@@ -189,7 +194,6 @@ int main(int argc, char** argv) {
     Finish(cq);
 
     /* Read in result into a host vector */
-    std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
     // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
     // Unpack the two bfloat16 values from the packed uint32_t
