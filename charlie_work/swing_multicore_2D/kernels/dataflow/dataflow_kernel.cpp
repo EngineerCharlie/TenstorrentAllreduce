@@ -59,20 +59,26 @@ void kernel_main() {
     // read in swing partner addresses
     uint32_t dst_core_x[swing_algo_steps];
     uint32_t dst_core_y[swing_algo_steps];
-    uint32_t semaphore_0[swing_algo_steps];
-    volatile tt_l1_ptr uint32_t* semaphore_0_ptr[swing_algo_steps];
-    uint32_t semaphore_1[2];
-    volatile tt_l1_ptr uint32_t* semaphore_1_ptr[2];
+
 
     for (int i = 0; i < (int)swing_algo_steps; i++) {
         dst_core_x[i] = get_arg_val<uint32_t>(11 + 2 * i);
         dst_core_y[i] = get_arg_val<uint32_t>(12 + 2 * i);
+    }
+
+    const int num_sem_0 = 5;
+    const int num_sem_1 = 8-num_sem_0;
+    uint32_t semaphore_0[num_sem_0];
+    volatile tt_l1_ptr uint32_t* semaphore_0_ptr[num_sem_0];
+    uint32_t semaphore_1[num_sem_1];
+    volatile tt_l1_ptr uint32_t* semaphore_1_ptr[num_sem_1];
+    for (int i = 0; i < num_sem_0; i++) {
         semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * swing_algo_steps + i));
         semaphore_0_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_0[i]);
     }
 
-    for (int i = 0; i < 2; i++) {
-        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(11 + 3 * swing_algo_steps + i));
+    for (int i = 0; i < num_sem_1; i++) {
+        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * swing_algo_steps + num_sem_0 + i));
         semaphore_1_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_1[i]);
     }
 
@@ -84,8 +90,8 @@ void kernel_main() {
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
         if (this_core_SE == direction_SE) {
-            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i]);
-            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i%2]);
+            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i%num_sem_0]);
+            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i%num_sem_1]);
             dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
@@ -94,8 +100,8 @@ void kernel_main() {
 
             // await first sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_0, 1);
-            noc_semaphore_wait(semaphore_0_ptr[i], 1);
-            noc_semaphore_set(semaphore_0_ptr[i], 0);
+            noc_semaphore_wait(semaphore_0_ptr[i%num_sem_0], 1);
+            noc_semaphore_set(semaphore_0_ptr[i%num_sem_0], 0);
 
             // write local array to com partner
             noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
@@ -104,8 +110,8 @@ void kernel_main() {
 
             // await second sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_1, 1);
-            noc_semaphore_wait(semaphore_1_ptr[i%2], 1);
-            noc_semaphore_set(semaphore_1_ptr[i%2], 0);
+            noc_semaphore_wait(semaphore_1_ptr[i%num_sem_1], 1);
+            noc_semaphore_set(semaphore_1_ptr[i%num_sem_1], 0);
             cb_push_back(cb_id_compute, 1);
         }
     }

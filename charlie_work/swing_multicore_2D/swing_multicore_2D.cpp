@@ -48,22 +48,6 @@ int get_comm_partner_2D(int node, int step, bool horizontal_step) {
     return comm_partner;  // will  loop round  to  always be in  range
 }
 
-// std::array<bool, 6> get_SE(int node_x, int node_y) {
-//     if (node_x % 2 == 0) {
-//         if (node_y % 2 == 0) {  // node 0,0
-//             return {true, true, false, false, true, true};
-//         } else {  // node 0,1
-//             return {true, false, false, true, true, false};
-//         }
-//     } else {  // node 1,0
-//         if (node_y % 2 == 0) {
-//             return {false, true, true, false, false, true};
-//         } else {  // node 1,1
-//             return {false, false, true, true, false, false};
-//         }
-//     }
-// }
-
 // Returns a uint32_t where bits 0-5 store boolean direction_SE
 uint32_t get_SE(int node_x, int node_y) {
     if (node_x % 2 == 0) {
@@ -99,6 +83,7 @@ int main(int argc, char** argv) {
         core_array[i] = {i % 8, i / 8};
     }
 
+    /*Setup dram to pass data to/from cores*/
     constexpr uint32_t single_tile_size = 1 * 1024;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
@@ -157,7 +142,8 @@ int main(int argc, char** argv) {
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
-    std::vector<uint32_t> dataflow_args(14 + 3 * swing_algo_steps);
+    /*NOC kernel arg initialization*/
+    std::vector<uint32_t> dataflow_args(11 + 8 + 2 * swing_algo_steps); //args + semaphore + NOC partners
     dataflow_args[0] = src_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[2] = src_dram_noc_x;
@@ -165,51 +151,49 @@ int main(int argc, char** argv) {
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = swing_algo_steps;
-    for (int i = 0; i < swing_algo_steps + 2; i++) {
+    for (int i = 0; i < 8; i++) {
         dataflow_args[11 + 2 * swing_algo_steps + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
+    /*Compute kernel arg initialization*/
     std::vector<uint32_t> compute_args(4);
     compute_args[0] = swing_algo_steps;
 
+    /*reused variable initialization*/
     KernelHandle dataflow_kernel;
     KernelHandle compute_kernel;
     CoreCoord logical_core;
     CoreCoord physical_core;
     bool start_direction_SE = true;
     bool horizontal_step;
+
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(core_array[core_i]);
+        /* core position*/
         dataflow_args[7] = (uint32_t)physical_core.x;
         dataflow_args[8] = (uint32_t)physical_core.y;
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
-
-        /* Set the parameters that the dataflow kernel will use */
-        dataflow_args[9] = (uint32_t)true;  // this_core_SE
+        
+        /*Order of operations (whether each step is NW or SE NOC)*/
         dataflow_args[10] = get_SE(core_array[core_i].x, core_array[core_i].y);
+        compute_args[3] = get_SE(core_array[core_i].x, core_array[core_i].y);
 
+        dataflow_args[9] = (uint32_t)true;  // this_core_SE
+
+        /*Swing algo partner node calculations*/
         horizontal_step = true;
         for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
-            // logical_core = {get_comm_partner(core_i, swing_step, core_arr_size), 0};
             int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step);
             logical_core = core_array[comm_partner_idx];
             physical_core = device->worker_core_from_logical_core(logical_core);
-
-            // printf(
-            //     "Core (%d,%d) step %d partner (%d, %d)\n",
-            //     (int)dataflow_args[9],
-            //     (int)dataflow_args[10],
-            //     swing_step,
-            //     // comm_partner_idx,
-            //     (int)physical_core.x,
-            //     (int)physical_core.y);
             dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
             dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.y;
             horizontal_step = !horizontal_step;
         }
-        /* Specify data movement kernels for reading/writing data to/from DRAM */
+
+        /*NW Kernel*/
         dataflow_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
@@ -218,6 +202,7 @@ int main(int argc, char** argv) {
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
+        /*SE Kernel*/
         dataflow_args[9] = (uint32_t)false;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
@@ -227,9 +212,7 @@ int main(int argc, char** argv) {
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
         SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
-        /* Set the parameters that the compute kernel will use */
-        compute_args[3] = get_SE(core_array[core_i].x, core_array[core_i].y);
-        /* Use the add_tiles operation in the compute kernel */
+        /* compute kernel */
         compute_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/swing_multicore_2D/kernels/"
