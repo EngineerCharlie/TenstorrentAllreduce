@@ -27,7 +27,10 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     /*Setup core array (full grid or subsection)*/
-    int SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
+    int SIDE_LENGTH if (argc >= 2) { SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1])); }
+    else {
+        SIDE_LENGTH = 8;
+    }
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
     CoreCoord start_core = {0, 0};
@@ -60,35 +63,34 @@ int main(int argc, char** argv) {
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     constexpr uint32_t num_input_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
+    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
     CircularBufferConfig cb_config_compute =
-        CircularBufferConfig(semaphore_tile_size, {{cb_index_compute, tt::DataFormat::Float16_b}})
+        CircularBufferConfig(semaphore_tile_size, {{cb_index_compute, data_format}})
             .set_page_size(cb_index_compute, semaphore_tile_size);
     CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
 
     constexpr uint32_t cb_index_NW = CBIndex::c_1;
-    CircularBufferConfig cb_config_NW =
-        CircularBufferConfig(semaphore_tile_size, {{cb_index_NW, tt::DataFormat::Float16_b}})
-            .set_page_size(cb_index_NW, semaphore_tile_size);
+    CircularBufferConfig cb_config_NW = CircularBufferConfig(semaphore_tile_size, {{cb_index_NW, data_format}})
+                                            .set_page_size(cb_index_NW, semaphore_tile_size);
     CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
 
     constexpr uint32_t cb_index_SE = CBIndex::c_2;
-    CircularBufferConfig cb_config_SE =
-        CircularBufferConfig(semaphore_tile_size, {{cb_index_SE, tt::DataFormat::Float16_b}})
-            .set_page_size(cb_index_SE, semaphore_tile_size);
+    CircularBufferConfig cb_config_SE = CircularBufferConfig(semaphore_tile_size, {{cb_index_SE, data_format}})
+                                            .set_page_size(cb_index_SE, semaphore_tile_size);
     CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
 
     constexpr uint32_t cb_index_recv = CBIndex::c_3;
     CircularBufferConfig cb_config_recv =
-        CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, tt::DataFormat::Float16_b}})
+        CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, data_format}})
             .set_page_size(cb_index_recv, single_tile_size);
     CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
     constexpr uint32_t cb_index_local = CBIndex::c_16;
     constexpr uint32_t num_output_tiles = 1;
     CircularBufferConfig cb_config_local =
-        CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, tt::DataFormat::Float16_b}})
+        CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, data_format}})
             .set_page_size(cb_index_local, single_tile_size);
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
@@ -191,22 +193,29 @@ int main(int argc, char** argv) {
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
     // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
     // Unpack the two bfloat16 values from the packed uint32_t
-    int array_size = single_tile_size / sizeof(uint32_t);
-    for (int i = 0; i < array_size; i += 10) {
-        auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
-        // Convert the unpacked bfloat16 values back to float for printing
-        float first_bfloat_value = two_bfloats.first.to_float();
-        float second_bfloat_value = two_bfloats.second.to_float();
-        printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
-    }
-    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
-
-    // Convert the unpacked bfloat16 values back to float for printing
-    float first_bfloat_value = two_bfloats.first.to_float();
-    float second_bfloat_value = two_bfloats.second.to_float();
-    printf("Result (nocast) = %d\n", result_vec[0]);  // 22 = 1102070192
+    int vector_size = single_tile_size / (32 * sizeof(uint32_t));
+    // print_vec_of_uint32_as_packed_bfloat16(result_vec, vector_size);
+    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
     printf(
-        "First bfloat to int = %d second %d\n", (int)first_bfloat_value, (int)second_bfloat_value);  // 22 = 1102070192
+        "First bfloat to int = %d, first result_vec int = %d\n",
+        (int)result_vec_b16[0].to_float(),
+        (int)result_vec[0]);  // 22 = 1102070192
+    // for (int i = 0; i < vector_size; i += 10) {
+    //     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
+    //     // Convert the unpacked bfloat16 values back to float for printing
+    //     bfloat16 first_bfloat_value = two_bfloats.first.to_float();
+    //     bfloat16 second_bfloat_value = two_bfloats.second.to_float();
+    //     printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+    // }
+    // auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
+
+    // // Convert the unpacked bfloat16 values back to float for printing
+    // bfloat16 first_bfloat_value = two_bfloats.first.to_float();
+    // bfloat16 second_bfloat_value = two_bfloats.second.to_float();
+    // printf("Result (nocast) = %d\n", result_vec[0]);  // 22 = 1102070192
+    // printf(
+    //     "First bfloat to int = %d second %d\n", (int)first_bfloat_value, (int)second_bfloat_value);  // 22 =
+    //     1102070192
 
     printf(
         "Expected = %d (or in human numbers = %d\n",
