@@ -18,13 +18,12 @@ void MAIN {
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
-
     cb_wait_front(cb_id_compute, 2);
     cb_pop_front(cb_id_compute, 2);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init();
-    
+
     bool SE;
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         // Signal appropriate NOC core to exchange data with other core
@@ -44,6 +43,7 @@ void MAIN {
         cb_pop_front(cb_id_compute, 1);
 
         // add vectors
+
         tile_regs_acquire();
         add_tiles(cb_id_local, cb_id_recv, 0, 0, 0);
         tile_regs_commit();
