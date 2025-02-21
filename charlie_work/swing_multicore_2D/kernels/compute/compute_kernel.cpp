@@ -18,8 +18,8 @@ void MAIN {
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
-    cb_wait_front(cb_id_compute, 2);
-    cb_pop_front(cb_id_compute, 2);
+    cb_wait_front(cb_id_compute, 1);
+    cb_pop_front(cb_id_compute, 1);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init();

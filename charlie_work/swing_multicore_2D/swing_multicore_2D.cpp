@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     }
 
     /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 1024;
+    constexpr uint32_t single_tile_size = 1 * 256;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -65,26 +65,24 @@ int main(int argc, char** argv) {
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     constexpr uint32_t num_input_tiles = 1;
     constexpr uint32_t num_output_tiles = 1;
-    constexpr uint32_t semaphore_num_tiles = 4;
+    constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
-    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;  // tt::DataFormat::UInt32;
+    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
     CircularBufferConfig cb_config_compute =
-        CircularBufferConfig(semaphore_num_tiles * semaphore_tile_size, {{cb_index_compute, data_format}})
+        CircularBufferConfig(semaphore_tile_size*num_semaphore_tiles , {{cb_index_compute, data_format}})
             .set_page_size(cb_index_compute, semaphore_tile_size);
     CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
 
     constexpr uint32_t cb_index_NW = CBIndex::c_1;
-    CircularBufferConfig cb_config_NW =
-        CircularBufferConfig(semaphore_num_tiles * semaphore_tile_size, {{cb_index_NW, data_format}})
-            .set_page_size(cb_index_NW, semaphore_tile_size);
+    CircularBufferConfig cb_config_NW = CircularBufferConfig(semaphore_tile_size*num_semaphore_tiles , {{cb_index_NW, data_format}})
+                                            .set_page_size(cb_index_NW, semaphore_tile_size);
     CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
 
     constexpr uint32_t cb_index_SE = CBIndex::c_2;
-    CircularBufferConfig cb_config_SE =
-        CircularBufferConfig(semaphore_num_tiles * semaphore_tile_size, {{cb_index_SE, data_format}})
-            .set_page_size(cb_index_SE, semaphore_tile_size);
+    CircularBufferConfig cb_config_SE = CircularBufferConfig(semaphore_tile_size*num_semaphore_tiles , {{cb_index_SE, data_format}})
+                                            .set_page_size(cb_index_SE, semaphore_tile_size);
     CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
 
     constexpr uint32_t cb_index_recv = CBIndex::c_3;
@@ -100,15 +98,11 @@ int main(int argc, char** argv) {
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
     /* Create source data and write to DRAM */
-    // std::vector<uint32_t> src_vec(single_tile_size / sizeof(data_format), 14);
-    // std::vector<uint32_t> result_vec(single_tile_size / sizeof(data_format), 0);
-    std::vector<uint32_t> src_vec;     //(single_tile_size, 14);
-    std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
     src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
-    result_vec = create_constant_vector_of_bfloat16(single_tile_size, 0.0f);
-    printf("Post initialization src 0 = %d   result 0 = %d\n", (int)src_vec[0], (int)result_vec[0]);  // 22 = 1102070192
-    EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, true);
-    // EnqueueWriteBuffer(cq, dst_dram_buffer, result_vec, true);
+
+    EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
+
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(11 + 8 + 2 * SWING_ALGO_STEPS);  // args + semaphore + NOC partners
     dataflow_args[0] = src_dram_buffer->address();
@@ -195,21 +189,42 @@ int main(int argc, char** argv) {
     }
 
     EnqueueProgram(cq, program, false);
+    Finish(cq);
+
+    /* Read in result into a host vector */
+    std::vector<uint32_t> result_vec;
+    EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
+    // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
+    // Unpack the two bfloat16 values from the packed uint32_t
+    int vector_size = single_tile_size / (32 * sizeof(uint32_t));
+    // print_vec_of_uint32_as_packed_bfloat16(result_vec, vector_size);
+    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+    printf(
+        "First bfloat to int = %d, first result_vec int = %d\n",
+        (int)result_vec_b16[0].to_float(),
+        (int)result_vec[0]);  // 22 = 1102070192
+    // for (int i = 0; i < vector_size; i += 10) {
+    //     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
+    //     // Convert the unpacked bfloat16 values back to float for printing
+    //     bfloat16 first_bfloat_value = two_bfloats.first.to_float();
+    //     bfloat16 second_bfloat_value = two_bfloats.second.to_float();
+    //     printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+    // }
+    // auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
+
+    // // Convert the unpacked bfloat16 values back to float for printing
+    // bfloat16 first_bfloat_value = two_bfloats.first.to_float();
+    // bfloat16 second_bfloat_value = two_bfloats.second.to_float();
+    // printf("Result (nocast) = %d\n", result_vec[0]);  // 22 = 1102070192
+    // printf(
+    //     "First bfloat to int = %d second %d\n", (int)first_bfloat_value, (int)second_bfloat_value);  // 22 =
+    //     1102070192
+
     printf(
         "Expected = %d (or in human numbers = %d\n",
         pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
             bfloat16((float)14 * (float)TOTAL_NODES), bfloat16((float)14 * (float)TOTAL_NODES))),
         14 * TOTAL_NODES);
-    Finish(cq);
-
-    /* Read in result into a host vector */
-    EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
-    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
-    // // Convert the unpacked bfloat16 values back to float for printing
-    float first_bfloat_value = two_bfloats.first.to_float();
-    float second_bfloat_value = two_bfloats.second.to_float();
-    printf("Post add src 0 = %d   result 0 = %d (or in human numbers = %d)\n", 
-        (int)src_vec[0], (int)result_vec[0], (int)first_bfloat_value);  // 22 = 1102070192
     CloseDevice(device);
 }
 
@@ -250,17 +265,15 @@ int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGT
 
 // Returns a uint32_t where bits 0-5 store boolean direction_SE
 uint32_t get_SE(int node_x, int node_y) {
-    //Note these are read backwards, so the returns are in reverse order
     if (node_x % 2 == 0) {
         if (node_y % 2 == 0) {  // node 0,0
-            // printf("Node (%d,%d) returning 110011");
             return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
         } else {                // node 0,1
-            return 0b011001; //Represents True, false, false, true, true, false
+            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
         }
     } else {  // node 1,0
         if (node_y % 2 == 0) {
-            return 0b100110; //Represents False, true, true, false false, true
+            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
         } else {              // node 1,1
             return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
         }
