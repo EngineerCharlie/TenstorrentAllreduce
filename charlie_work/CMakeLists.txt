@@ -4,7 +4,9 @@ set(PROGRAMMING_EXAMPLES_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/swing_multicore/swing_multicore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/swing_multicore2/swing_multicore2.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/swing_multicore_1D/swing_multicore_1D.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/recdub_multicore_1D/recdub_multicore_1D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/swing_multicore_2D/swing_multicore_2D.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/recdub_multicore_2D/recdub_multicore_2D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hello_core2core_1d/hello_core2core_1d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hello_core2core_array/hello_core2core_array.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hello_core2core_arr_simple/hello_core2core_arr_simple.cpp
