@@ -37,6 +37,10 @@ int main(int argc, char** argv) {
     } else {
         start_row = 0;
         end_row = 1;
+    }    
+    int RND_SRC = 0;
+    if (argc >= 3) {
+        RND_SRC = std::stoi(argv[2]);
     }
     for (int core_row = start_row; core_row < end_row; core_row++) {
         /* Silicon accelerator setup */
@@ -115,7 +119,11 @@ int main(int argc, char** argv) {
 
         /* Create source data and write to DRAM */
         std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+        if (RND_SRC == -1) {
+            src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+        } else {
+            src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
+        }
 
         EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
@@ -219,27 +227,30 @@ int main(int argc, char** argv) {
         EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
         printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
         // Unpack the two bfloat16 values from the packed uint32_t
-        int array_size = single_tile_size / sizeof(uint32_t);
-        for (int i = 0; i < array_size; i += 50) {
-            auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
-            // Convert the unpacked bfloat16 values back to float for printing
-            float first_bfloat_value = two_bfloats.first.to_float();
-            float second_bfloat_value = two_bfloats.second.to_float();
-            printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
-        }
+        // int array_size = single_tile_size / sizeof(uint32_t);
+        // for (int i = 0; i < array_size; i += 50) {
+        //     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
+        //     // Convert the unpacked bfloat16 values back to float for printing
+        //     float first_bfloat_value = two_bfloats.first.to_float();
+        //     float second_bfloat_value = two_bfloats.second.to_float();
+        //     printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+        // }
         auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
         // Convert the unpacked bfloat16 values back to float for printing
         float first_bfloat_value = two_bfloats.first.to_float();
         float second_bfloat_value = two_bfloats.second.to_float();
-        printf("Result (nocast) = %d\n", result_vec[0]);                // 22 = 1102070192
-        printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
+        printf("          Result (nocast) = %d, and after casting %d\n", result_vec[0],(int)first_bfloat_value);  
+        two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[0]);
 
-        printf(
-            "Expected = %d (or in human numbers = %d\n",
-            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-                bfloat16((float)14 * (float)core_arr_size), bfloat16((float)14 * (float)core_arr_size))),
-            14 * core_arr_size);
+        // Convert the unpacked bfloat16 values back to float for printing
+        first_bfloat_value = two_bfloats.first.to_float();
+        second_bfloat_value = two_bfloats.second.to_float();
+        first_bfloat_value = first_bfloat_value *8.0;
+        second_bfloat_value = second_bfloat_value *8.0;
+        uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+            first_bfloat_value,second_bfloat_value));
+        printf("Expected result (nocast) = %d, and after casting %d\n",output,(int)first_bfloat_value);  
         CloseDevice(device);
     }
 }

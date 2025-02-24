@@ -100,7 +100,7 @@ void kernel_main() {
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
-            cb_reserve_back(cb_id_compute, 1);
+            // cb_reserve_back(cb_id_compute, 1);
 
             // await first sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_0, 1);

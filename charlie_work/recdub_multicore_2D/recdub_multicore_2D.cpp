@@ -12,10 +12,6 @@
 using namespace tt;
 using namespace tt::tt_metal;
 
-int ceil_div(int, int);
-int get_comm_partner(int, int, int);
-int get_comm_partner_2D(int, int, bool, int, int);
-uint32_t get_SE(int, int);
 int highest_power_of_two(int);
 void printBinary(unsigned int num) {
     for (int i = 31; i >= 0; i--) {  // Adjust 31 for smaller integers
@@ -38,6 +34,10 @@ int main(int argc, char** argv) {
         SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
     } else {
         SIDE_LENGTH = 8;
+    }
+    int RND_SRC = 0;
+    if (argc >= 3) {
+        RND_SRC = std::stoi(argv[2]);
     }
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
@@ -107,7 +107,11 @@ int main(int argc, char** argv) {
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
-    src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+    if (RND_SRC == -1) {
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+    } else {
+        src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
+    }
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
@@ -236,85 +240,23 @@ int main(int argc, char** argv) {
     int vector_size = single_tile_size / (32 * sizeof(uint32_t));
     // print_vec_of_uint32_as_packed_bfloat16(result_vec, vector_size);
     std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    printf(
-        "First bfloat to int = %d, first result_vec int = %d\n",
-        (int)result_vec_b16[0].to_float(),
-        (int)result_vec[0]);  // 22 = 1102070192
-    // for (int i = 0; i < vector_size; i += 10) {
-    //     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
-    //     // Convert the unpacked bfloat16 values back to float for printing
-    //     bfloat16 first_bfloat_value = two_bfloats.first.to_float();
-    //     bfloat16 second_bfloat_value = two_bfloats.second.to_float();
-    //     printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
-    // }
-    // auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
+    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
 
-    // // Convert the unpacked bfloat16 values back to float for printing
-    // bfloat16 first_bfloat_value = two_bfloats.first.to_float();
-    // bfloat16 second_bfloat_value = two_bfloats.second.to_float();
-    // printf("Result (nocast) = %d\n", result_vec[0]);  // 22 = 1102070192
-    // printf(
-    //     "First bfloat to int = %d second %d\n", (int)first_bfloat_value, (int)second_bfloat_value);  // 22 =
-    //     1102070192
+    // Convert the unpacked bfloat16 values back to float for printing
+    float first_bfloat_value = two_bfloats.first.to_float();
+    float second_bfloat_value = two_bfloats.second.to_float();
+    printf("        Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)first_bfloat_value);
+    two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[0]);
 
-    printf(
-        "Expected = %d (or in human numbers = %d\n",
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            bfloat16((float)14 * (float)TOTAL_NODES), bfloat16((float)14 * (float)TOTAL_NODES))),
-        14 * TOTAL_NODES);
+    // Convert the unpacked bfloat16 values back to float for printing
+    first_bfloat_value = two_bfloats.first.to_float();
+    second_bfloat_value = two_bfloats.second.to_float();
+    first_bfloat_value = first_bfloat_value * TOTAL_NODES;
+    second_bfloat_value = second_bfloat_value * TOTAL_NODES;
+    uint32_t output =
+        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
+    printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
     CloseDevice(device);
-}
-
-int ceil_div(int a, int b) { return (a + b - 1) / b; }
-
-int get_comm_partner(int node, int step, int num_nodes) {
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-    int uncorrected_comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);
-    return (uncorrected_comm_partner + num_nodes) % num_nodes;
-}
-
-int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    step = step / 2;
-
-    // straight line distnce
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-
-    int comm_partner;
-    if (horizontal_step) {
-        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
-        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
-            comm_partner += SIDE_LENGTH;
-        } else if (comm_partner / SIDE_LENGTH > row) {
-            comm_partner -= SIDE_LENGTH;
-        }
-    } else {
-        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
-        if (comm_partner < 0) {
-            comm_partner += TOTAL_NODES;
-        } else if (comm_partner >= TOTAL_NODES) {
-            comm_partner -= TOTAL_NODES;
-        }
-    }
-    return comm_partner;  // will  loop round  to  always be in  range
-}
-
-// Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
-    if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
-    }
 }
 
 int highest_power_of_two(int value) {
