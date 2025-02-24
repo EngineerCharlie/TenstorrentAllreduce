@@ -137,6 +137,9 @@ int main(int argc, char** argv) {
         KernelHandle compute_kernel;
         CoreCoord logical_core;
         CoreCoord physical_core;
+        int recv_node,message_pass_depth;
+        bool sending_SE;
+
         bool start_direction_SE = true;
         uint32_t step_directions = 0b00000;
 
@@ -151,11 +154,11 @@ int main(int argc, char** argv) {
             /* Set the parameters that the compute kernel will use */
             compute_args[1] = (uint32_t)physical_core.x;
             compute_args[2] = (uint32_t)physical_core.y;
-            int message_pass_depth = 1;
+            message_pass_depth = 1;
 
             for (int recdub_step = 0; recdub_step < swing_algo_steps; recdub_step += 1) {
-                bool sending_SE = core_array[core_i].x % (2 * message_pass_depth) < message_pass_depth;
-                int recv_node = core_array[core_i].x + (sending_SE ? message_pass_depth : -message_pass_depth);
+                sending_SE = core_array[core_i].x % (2 * message_pass_depth) < message_pass_depth;
+                recv_node = core_array[core_i].x + (sending_SE ? message_pass_depth : -message_pass_depth);
                 logical_core = {recv_node, core_row};
                 physical_core = device->worker_core_from_logical_core(logical_core);
 
@@ -167,14 +170,13 @@ int main(int argc, char** argv) {
                 dataflow_args[13 + 2 * recdub_step] = {(uint32_t)physical_core.x};
                 dataflow_args[14 + 2 * recdub_step] = {(uint32_t)physical_core.y};
                 message_pass_depth = 2 * message_pass_depth;
-                printf("Node %d step %d partner %d\n", (int)core_array[core_i].x, recdub_step, (int)logical_core.x);
             }
 
             dataflow_args[12] = (uint32_t)step_directions;
             compute_args[3] = (uint32_t)step_directions;
-            printBinary(step_directions);
-            dataflow_args[11] = (uint32_t)true;  // this_core_SE
+            /*SE core intialization*/
             /* Specify data movement kernels for reading/writing data to/from DRAM */
+            dataflow_args[11] = (uint32_t)true;  // this_core_SE
             dataflow_kernel = CreateKernel(
                 program,
                 "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/recdub_multicore_1D/kernels/"
@@ -183,6 +185,7 @@ int main(int argc, char** argv) {
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
             SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
+            /*NW core intialization*/
             dataflow_args[11] = (uint32_t)false;  // this_core_SE
             dataflow_kernel = CreateKernel(
                 program,
@@ -192,7 +195,7 @@ int main(int argc, char** argv) {
                 DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
             SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
 
-            /* Use the add_tiles operation in the compute kernel */
+            /*Compute core intialization*/
             compute_kernel = CreateKernel(
                 program,
                 "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/recdub_multicore_1D/kernels/"

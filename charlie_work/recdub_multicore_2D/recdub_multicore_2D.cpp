@@ -17,6 +17,12 @@ int get_comm_partner(int, int, int);
 int get_comm_partner_2D(int, int, bool, int, int);
 uint32_t get_SE(int, int);
 int highest_power_of_two(int);
+void printBinary(unsigned int num) {
+    for (int i = 31; i >= 0; i--) {  // Adjust 31 for smaller integers
+        printf("%d", (num >> i) & 1);
+    }
+    printf("\n");
+}
 
 int main(int argc, char** argv) {
     /* Silicon accelerator setup */
@@ -128,8 +134,9 @@ int main(int argc, char** argv) {
     CoreCoord logical_core;
     CoreCoord physical_core;
     bool start_direction_SE = true;
-    bool horizontal_step;
+    bool horizontal_step, sending_SE;
     uint32_t step_directions = 0b00000;
+    int node_position, node_other_position, message_pass_depth, recv_node;
 
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
@@ -140,34 +147,51 @@ int main(int argc, char** argv) {
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
 
-        dataflow_args[9] = (uint32_t)true;  // this_core_SE
-        int message_pass_depth = 1;
         /*Swing algo partner node calculations*/
         horizontal_step = true;
+        message_pass_depth = 1;  // distance of pass
         for (int recdub_step = 0; recdub_step < SWING_ALGO_STEPS; recdub_step += 1) {
-            int comm_partner_idx = get_comm_partner_2D(core_i, recdub_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-            int node_position = horizontal_step ? (int)core_array[core_i].x : (int)core_array[core_i].y;
-            bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
-            int recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
+            // Gets x and y/y and x coordinates depending on if hztl step
+            node_position = horizontal_step ? (int)core_array[core_i].x : (int)core_array[core_i].y;
+            node_other_position = !horizontal_step ? (int)core_array[core_i].x : (int)core_array[core_i].y;
 
-            logical_core =
-                horizontal_step ? {core_array[core_i].x, node_position} : {node_position, core_array[core_i].y};
-            physical_core = device->worker_core_from_logical_core(logical_core);
-            dataflow_args[11 + 2 * recdub_step] = (uint32_t)physical_core.x;
-            dataflow_args[12 + 2 * recdub_step] = (uint32_t)physical_core.y;
-            !horizontal_loop ? message_pass_depth = 2 * message_pass_depth : message_pass_depth;
-            horizontal_step = !horizontal_step;
+            // If this node is sending from SE core on this step
+            sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
             if (sending_SE) {
                 step_directions |= (1 << recdub_step);
             } else {
                 step_directions &= ~(1 << recdub_step);
             }
+            // Partner node
+            recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
+
+            // Actual core of comm partner
+            logical_core =
+                horizontal_step ? CoreCoord{recv_node, node_other_position} : CoreCoord{node_other_position, recv_node};
+            physical_core = device->worker_core_from_logical_core(logical_core);
+            dataflow_args[11 + 2 * recdub_step] = (uint32_t)physical_core.x;
+            dataflow_args[12 + 2 * recdub_step] = (uint32_t)physical_core.y;
+            // printf(
+            //     "Node %d,%d step %d %d partner %d,%d (or %d, %d)\n",
+            //     (int)core_array[core_i].x,
+            //     (int)core_array[core_i].y,
+            //     recdub_step,
+            //     (int)horizontal_step,
+            //     (int)logical_core.x,
+            //     (int)logical_core.y,
+            //     recv_node,
+            //     node_other_position);
+
+            !horizontal_step ? message_pass_depth = 2 * message_pass_depth : message_pass_depth;
+            horizontal_step = !horizontal_step;
         }
+
         /*Order of operations (whether each step is NW or SE NOC)*/
         dataflow_args[10] = step_directions;
         compute_args[3] = step_directions;
 
         /*SE Kernel*/
+        dataflow_args[9] = (uint32_t)true;  // this_core_SE
         dataflow_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/recdub_multicore_2D/kernels/"
