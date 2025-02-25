@@ -71,8 +71,7 @@ int main(int argc, char** argv) {
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
-    constexpr uint32_t num_input_tiles = 1;
-    constexpr uint32_t num_output_tiles = 1;
+    constexpr uint32_t num_data_tiles = 2;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
@@ -97,25 +96,29 @@ int main(int argc, char** argv) {
 
     constexpr uint32_t cb_index_recv = CBIndex::c_3;
     CircularBufferConfig cb_config_recv =
-        CircularBufferConfig(num_input_tiles * single_tile_size, {{cb_index_recv, data_format}})
+        CircularBufferConfig(num_data_tiles * single_tile_size, {{cb_index_recv, data_format}})
             .set_page_size(cb_index_recv, single_tile_size);
     CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
     constexpr uint32_t cb_index_local = CBIndex::c_16;
     CircularBufferConfig cb_config_local =
-        CircularBufferConfig(num_output_tiles * single_tile_size, {{cb_index_local, data_format}})
+        CircularBufferConfig(num_data_tiles * single_tile_size, {{cb_index_local, data_format}})
             .set_page_size(cb_index_local, single_tile_size);
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
     if (RND_SRC == -1) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size*num_data_tiles, 14.0f);
     } else {
-        src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
+        src_vec = create_random_vector_of_bfloat16(single_tile_size*num_data_tiles, 100, RND_SRC);
     }
+    
+    std::vector<uint32_t> result_vec;
+    result_vec = create_constant_vector_of_bfloat16(single_tile_size*num_data_tiles, 0.0f);
 
-    EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
+    EnqueueWriteBuffer(cq, src_dram_buffer, &src_vec, true);
+    EnqueueWriteBuffer(cq, dst_dram_buffer, &result_vec, true);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(11 + 8 + 2 * SWING_ALGO_STEPS);  // args + semaphore + NOC partners
@@ -159,7 +162,7 @@ int main(int argc, char** argv) {
 
         /*Swing algo partner node calculations*/
         horizontal_step = true;
-        printf("Node %d,%d communicates with:\n", (int)core_array[core_i].x, (int)core_array[core_i].y);
+        // printf("Node %d,%d communicates with:\n", (int)core_array[core_i].x, (int)core_array[core_i].y);
         for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step += 1) {
             int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
             logical_core = core_array[comm_partner_idx];
@@ -167,7 +170,7 @@ int main(int argc, char** argv) {
             dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
             dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.y;
             horizontal_step = !horizontal_step;
-            printf("Step %d - %d %d\n", swing_step, (int)logical_core.x, (int)logical_core.y);
+            // printf("Step %d - %d %d\n", swing_step, (int)logical_core.x, (int)logical_core.y);
         }
 
         /*SE Kernel*/
@@ -208,7 +211,6 @@ int main(int argc, char** argv) {
         Finish(cq);
     }
     /* Read in result into a host vector */
-    std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
     // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
     // Unpack the two bfloat16 values from the packed uint32_t

@@ -18,23 +18,30 @@ int get_comm_partner(int node, int step, int num_nodes) {
 }
 
 int main(int argc, char** argv) {
-    int start_row = 0;
-    int end_row = 1;
+    int start_col;
+    int end_col;
     if (argc >= 2) {
-        int core_row_input = std::stoi(argv[1]);
-        if (core_row_input < 8 && core_row_input >= 0) {
-            start_row = core_row_input;
-            end_row = core_row_input + 1;
-        } else if (core_row_input == 100) {
-            start_row = 0;
-            end_row = 8;
+        int core_col_input = std::stoi(argv[1]);
+
+        if (core_col_input < 8) {
+            start_col = core_col_input;
+            end_col = core_col_input + 1;
+        } else if (core_col_input == 100) {
+            start_col = 0;
+            end_col = 8;
+        } else {
+            start_col = 0;
+            end_col = 1;
         }
+    } else {
+        start_col = 0;
+        end_col = 1;
     }
     int RND_SRC = 0;
     if (argc >= 3) {
         RND_SRC = std::stoi(argv[2]);
     }
-    for (int core_row = start_row; core_row < end_row; core_row++) {
+    for (int core_col = start_col; core_col < end_col; core_col++) {
         /* Silicon accelerator setup */
         Device* device = CreateDevice(0);
 
@@ -43,13 +50,13 @@ int main(int argc, char** argv) {
         Program program = CreateProgram();
         const uint32_t core_arr_size = 8;
         const uint32_t swing_algo_steps = 3;  // log2(core_arr_size)
-        CoreCoord start_core = {0, core_row};
-        CoreCoord end_core = {7, core_row};
+        CoreCoord start_core = {core_col,0};
+        CoreCoord end_core = {core_col,7};
         CoreRange cores(start_core, end_core);
 
         std::vector<CoreCoord> core_array(8);
         for (uint32_t i = 0; i < core_array.size(); i++) {
-            core_array[i] = {i, core_row};
+            core_array[i] = {core_col,i};
         }
 
         constexpr uint32_t single_tile_size = 2 * 1024;
@@ -117,7 +124,7 @@ int main(int argc, char** argv) {
             src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
         }
 
-        EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, true);
+        EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
         std::vector<uint32_t> dataflow_args(15 + 2 * swing_algo_steps);
         dataflow_args[0] = src_dram_buffer->address();
@@ -155,7 +162,7 @@ int main(int argc, char** argv) {
             compute_args[3] = (uint32_t)start_direction_SE;
 
             for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
-                logical_core = {get_comm_partner(core_i, swing_step, core_arr_size), core_row};
+                logical_core = {core_col,get_comm_partner(core_i, swing_step, core_arr_size)};
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[13 + 2 * swing_step] = {(uint32_t)physical_core.x};
                 dataflow_args[14 + 2 * swing_step] = {(uint32_t)physical_core.y};
