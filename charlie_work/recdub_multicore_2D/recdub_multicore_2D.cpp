@@ -28,17 +28,22 @@ int main(int argc, char** argv) {
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
-    /*Setup core array (full grid or subsection)*/
+    bool RUN_KERNEL = false;
+    if (argc >= 2 && std::stoi(argv[2]) == 1) {
+        RUN_KERNEL = true;
+    }
     int SIDE_LENGTH;
-    if (argc >= 2) {
-        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
+    if (argc >= 3 ) {
+        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[3]));
     } else {
-        SIDE_LENGTH = 8;
+        SIDE_LENGTH = 1;
     }
     int RND_SRC = 0;
-    if (argc >= 3) {
-        RND_SRC = std::stoi(argv[2]);
+    if (argc >= 4) {
+        RND_SRC = std::stoi(argv[4]);
     }
+
+    /*Setup core array (full grid or subsection)*/
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
     CoreCoord start_core = {0, 0};

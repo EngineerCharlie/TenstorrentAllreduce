@@ -25,17 +25,22 @@ int main(int argc, char** argv) {
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
-    /*Setup core array (full grid or subsection)*/
+    bool RUN_KERNEL = false;
+    if (argc >= 2 && std::stoi(argv[1]) == 1) {
+        RUN_KERNEL = true;
+    }
     int SIDE_LENGTH;
-    if (argc >= 2) {
-        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[1]));
+    if (argc >= 3) {
+        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[2]));
     } else {
-        SIDE_LENGTH = 8;
+        SIDE_LENGTH = 1;
     }
     int RND_SRC = 0;
-    if (argc >= 3) {
-        RND_SRC = std::stoi(argv[2]);
+    if (argc >= 4) {
+        RND_SRC = std::stoi(argv[3]);
     }
+    
+    /*Setup core array (full grid or subsection)*/
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
     CoreCoord start_core = {0, 0};
@@ -154,6 +159,7 @@ int main(int argc, char** argv) {
 
         /*Swing algo partner node calculations*/
         horizontal_step = true;
+        printf("Node %d,%d communicates with:\n", (int)core_array[core_i].x, (int)core_array[core_i].y);
         for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step += 1) {
             int comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
             logical_core = core_array[comm_partner_idx];
@@ -161,6 +167,7 @@ int main(int argc, char** argv) {
             dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
             dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.y;
             horizontal_step = !horizontal_step;
+            printf("Step %d - %d %d\n", swing_step, (int)logical_core.x, (int)logical_core.y);
         }
 
         /*SE Kernel*/
@@ -196,10 +203,10 @@ int main(int argc, char** argv) {
             });
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
     }
-
-    EnqueueProgram(cq, program, false);
-    Finish(cq);
-
+    if (RUN_KERNEL) {
+        EnqueueProgram(cq, program, false);
+        Finish(cq);
+    }
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);

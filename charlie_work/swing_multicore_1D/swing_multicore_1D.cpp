@@ -25,8 +25,8 @@ int main(int argc, char** argv) {
 
         if (core_row_input < 8) {
             start_row = core_row_input;
-            end_row = core_row_input+1;
-        } else if (core_row_input == 100){
+            end_row = core_row_input + 1;
+        } else if (core_row_input == 100) {
             start_row = 0;
             end_row = 8;
         } else {
@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
         CoreCoord end_core = {7, core_row};
         CoreRange cores(start_core, end_core);
 
-        std::array<CoreCoord, core_arr_size> core_array;
+        std::vector<CoreCoord> core_array(8);
         for (uint32_t i = 0; i < core_array.size(); i++) {
             core_array[i] = {i, core_row};
         }
@@ -118,10 +118,11 @@ int main(int argc, char** argv) {
 
         /* Create source data and write to DRAM */
         std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
-        if (RND_SRC == -1)
+        if (RND_SRC == -1) {
             src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
-        else
-            src_vec = create_random_vector_of_bfloat16(single_tile_size, 100,RND_SRC);
+        } else {
+            src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
+        }
 
         EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, false);
 
@@ -220,17 +221,17 @@ int main(int argc, char** argv) {
         auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
         float first_bfloat_value = two_bfloats.first.to_float();
         float second_bfloat_value = two_bfloats.second.to_float();
-        printf("          Result (nocast) = %d, and after casting %d\n", result_vec[0],(int)first_bfloat_value);  
+        printf("          Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)first_bfloat_value);
         two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[0]);
 
         // Convert the unpacked bfloat16 values back to float for printing
         first_bfloat_value = two_bfloats.first.to_float();
         second_bfloat_value = two_bfloats.second.to_float();
-        first_bfloat_value = first_bfloat_value *8.0;
-        second_bfloat_value = second_bfloat_value *8.0;
-        uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            first_bfloat_value,second_bfloat_value));
-        printf("Expected result (nocast) = %d, and after casting %d\n",output,(int)first_bfloat_value);  
+        first_bfloat_value = first_bfloat_value * 8.0;
+        second_bfloat_value = second_bfloat_value * 8.0;
+        uint32_t output =
+            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
+        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
 
         CloseDevice(device);
     }
