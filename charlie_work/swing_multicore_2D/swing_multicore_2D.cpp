@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     if (argc >= 4) {
         RND_SRC = std::stoi(argv[3]);
     }
-    
+
     /*Setup core array (full grid or subsection)*/
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
-    constexpr uint32_t num_data_tiles = 2;
+    constexpr uint32_t num_data_tiles = 1;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
@@ -108,14 +108,14 @@ int main(int argc, char** argv) {
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
-    if (RND_SRC == -1) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size*num_data_tiles, 14.0f);
+    if (RND_SRC < 0) {
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 14.0f);
     } else {
-        src_vec = create_random_vector_of_bfloat16(single_tile_size*num_data_tiles, 100, RND_SRC);
+        src_vec = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
     }
-    
+
     std::vector<uint32_t> result_vec;
-    result_vec = create_constant_vector_of_bfloat16(single_tile_size*num_data_tiles, 0.0f);
+    result_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 0.0f);
 
     EnqueueWriteBuffer(cq, src_dram_buffer, &src_vec, true);
     EnqueueWriteBuffer(cq, dst_dram_buffer, &result_vec, true);

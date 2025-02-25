@@ -62,7 +62,7 @@ void kernel_main() {
     }
 
     // Read and setup semaphores
-    const int num_sem_0 = 6;
+    const int num_sem_0 = 5;
     const int num_sem_1 = 8 - num_sem_0;
     uint32_t semaphore_0[num_sem_0];
     volatile tt_l1_ptr uint32_t* semaphore_0_ptr[num_sem_0];
