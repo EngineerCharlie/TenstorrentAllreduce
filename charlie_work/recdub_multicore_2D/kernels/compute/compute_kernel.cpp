@@ -18,8 +18,8 @@ void MAIN {
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
-    cb_wait_front(cb_id_compute, 1);
-    cb_pop_front(cb_id_compute, 1);
+    cb_wait_front(cb_id_local, 1);
+    cb_pop_front(cb_id_local, 1);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init();
@@ -39,8 +39,7 @@ void MAIN {
 
         // Await signal from NOC that data is on local memory
         // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " step " << i << ENDL());
-        cb_wait_front(cb_id_compute, 1);
-        cb_pop_front(cb_id_compute, 1);
+        cb_wait_front(cb_id_recv, 1);
 
         // add vectors
 
@@ -54,7 +53,7 @@ void MAIN {
         cb_push_back(cb_id_local, 1);
         tile_regs_release();
 
-        // direction_SE = !direction_SE;
+        cb_pop_front(cb_id_recv, 1);
     }
     cb_push_back(cb_id_SE, 1);
     cb_push_back(cb_id_NW, 1);

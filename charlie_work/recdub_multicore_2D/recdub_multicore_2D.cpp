@@ -29,18 +29,18 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     bool RUN_KERNEL = false;
-    if (argc >= 2 && std::stoi(argv[2]) == 1) {
+    if (argc >= 1 && std::stoi(argv[1]) == 1) {
         RUN_KERNEL = true;
     }
     int SIDE_LENGTH;
-    if (argc >= 3 ) {
-        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[3]));
+    if (argc >= 2 ) {
+        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[2]));
     } else {
         SIDE_LENGTH = 1;
     }
     int RND_SRC = 0;
-    if (argc >= 4) {
-        RND_SRC = std::stoi(argv[4]);
+    if (argc >= 3) {
+        RND_SRC = std::stoi(argv[3]);
     }
 
     /*Setup core array (full grid or subsection)*/
@@ -233,9 +233,10 @@ int main(int argc, char** argv) {
             });
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
     }
-
+    if (RUN_KERNEL){
     EnqueueProgram(cq, program, false);
     Finish(cq);
+    }
 
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;

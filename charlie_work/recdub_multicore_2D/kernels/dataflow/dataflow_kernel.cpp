@@ -80,10 +80,10 @@ void kernel_main() {
 
     // read ublocks from src to local
     if (!this_core_SE) {
-        cb_reserve_back(cb_id_compute, 1);
+        cb_reserve_back(cb_id_local, 1);
         noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data);
         noc_async_read_barrier();
-        cb_push_back(cb_id_compute, 1);
+        cb_push_back(cb_id_local, 1);
     }
 
     uint64_t dst_noc_semaphore_0;
@@ -116,7 +116,7 @@ void kernel_main() {
             noc_semaphore_inc(dst_noc_semaphore_1, 1);
             noc_semaphore_wait(semaphore_1_ptr[i%num_sem_1], 1);
             noc_semaphore_set(semaphore_1_ptr[i%num_sem_1], 0);
-            cb_push_back(cb_id_compute, 1);
+            cb_push_back(cb_id_recv, 1);
         }
     }
     cb_wait_front(cb_id_this, 1);
