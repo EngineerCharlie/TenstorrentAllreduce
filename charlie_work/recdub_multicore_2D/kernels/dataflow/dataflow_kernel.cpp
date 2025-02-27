@@ -26,7 +26,7 @@ void kernel_main() {
     uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
     uint64_t host_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_addr);
 
-    //setup circular buffers
+    // setup circular buffers
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
@@ -63,7 +63,7 @@ void kernel_main() {
 
     // Read and setup semaphores
     const int num_sem_0 = 6;
-    const int num_sem_1 = 8-num_sem_0;
+    const int num_sem_1 = 8 - num_sem_0;
     uint32_t semaphore_0[num_sem_0];
     volatile tt_l1_ptr uint32_t* semaphore_0_ptr[num_sem_0];
     uint32_t semaphore_1[num_sem_1];
@@ -90,23 +90,25 @@ void kernel_main() {
     uint64_t dst_noc_semaphore_1;
     uint64_t dst_noc_addr;
     bool direction_SE;
+
     // Signal appropriate NOC core to exchange data with other core
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
         if (this_core_SE == direction_SE) {
-            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i%num_sem_0]);
-            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i%num_sem_1]);
+            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
+            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
             dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " step0 : " << i << ENDL();
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
+            cb_wait_front(cb_id_local, 1);
             cb_pop_front(cb_id_this, 1);
-            // cb_reserve_back(cb_id_compute, 1);
-
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " step1 : " << i << ENDL();
             // await first sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_0, 1);
-            noc_semaphore_wait(semaphore_0_ptr[i%num_sem_0], 1);
-            noc_semaphore_set(semaphore_0_ptr[i%num_sem_0], 0);
-
+            noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
+            noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " step2 : " << i << ENDL();
             // write local array to com partner
             noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
             noc_async_write_barrier();
@@ -114,8 +116,8 @@ void kernel_main() {
 
             // await second sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_1, 1);
-            noc_semaphore_wait(semaphore_1_ptr[i%num_sem_1], 1);
-            noc_semaphore_set(semaphore_1_ptr[i%num_sem_1], 0);
+            noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
+            noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
             cb_push_back(cb_id_recv, 1);
         }
     }

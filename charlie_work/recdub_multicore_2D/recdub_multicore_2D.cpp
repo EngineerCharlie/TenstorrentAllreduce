@@ -29,17 +29,17 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     bool RUN_KERNEL = false;
-    if (argc >= 1 && std::stoi(argv[1]) == 1) {
+    if (argc >= 2 && std::stoi(argv[1]) == 1) {
         RUN_KERNEL = true;
     }
     int SIDE_LENGTH;
-    if (argc >= 2 ) {
+    if (argc >= 3) {
         SIDE_LENGTH = highest_power_of_two(std::stoi(argv[2]));
     } else {
         SIDE_LENGTH = 1;
     }
     int RND_SRC = 0;
-    if (argc >= 3) {
+    if (argc >= 4) {
         RND_SRC = std::stoi(argv[3]);
     }
 
@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     }
 
     /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 256;
+    constexpr uint32_t single_tile_size = 1 * 2048;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
     if (RND_SRC == -1) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size, 1.0f);
     } else {
         src_vec = create_random_vector_of_bfloat16(single_tile_size, 100, RND_SRC);
     }
@@ -233,9 +233,9 @@ int main(int argc, char** argv) {
             });
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
     }
-    if (RUN_KERNEL){
-    EnqueueProgram(cq, program, false);
-    Finish(cq);
+    if (RUN_KERNEL) {
+        EnqueueProgram(cq, program, false);
+        Finish(cq);
     }
 
     /* Read in result into a host vector */
