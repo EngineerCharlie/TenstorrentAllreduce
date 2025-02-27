@@ -28,8 +28,6 @@ void MAIN {
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         // Signal appropriate NOC core to exchange data with other core
         SE = (packed_bools >> i) & 1;  // Extract bit i
-        // if (this_core_x == 1)
-        // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " SE? " << (int) SE << ENDL());
 
         if (SE) {
             cb_push_back(cb_id_SE, 1);
@@ -38,11 +36,9 @@ void MAIN {
         }
 
         // Await signal from NOC that data is on local memory
-        // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " step " << i << ENDL());
         cb_wait_front(cb_id_recv, 1);
 
         // add vectors
-
         tile_regs_acquire();
         add_tiles(cb_id_local, cb_id_recv, 0, 0, 0);
         tile_regs_commit();

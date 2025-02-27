@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
     }
 
     /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 256;
+    constexpr uint32_t single_tile_size = 1 * 2048;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size,
@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     constexpr uint32_t num_data_tiles = 1;
+    constexpr uint32_t num_recv_tiles = 1;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
 
     constexpr uint32_t cb_index_recv = CBIndex::c_3;
     CircularBufferConfig cb_config_recv =
-        CircularBufferConfig(num_data_tiles * single_tile_size, {{cb_index_recv, data_format}})
+        CircularBufferConfig(num_recv_tiles * single_tile_size, {{cb_index_recv, data_format}})
             .set_page_size(cb_index_recv, single_tile_size);
     CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
 
@@ -109,7 +110,7 @@ int main(int argc, char** argv) {
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
     if (RND_SRC < 0) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 14.0f);
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
     } else {
         src_vec = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
     }
@@ -117,8 +118,8 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> result_vec;
     result_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 0.0f);
 
-    EnqueueWriteBuffer(cq, src_dram_buffer, &src_vec, true);
-    EnqueueWriteBuffer(cq, dst_dram_buffer, &result_vec, true);
+    EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, true);
+    EnqueueWriteBuffer(cq, dst_dram_buffer, result_vec, true);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(11 + 8 + 2 * SWING_ALGO_STEPS);  // args + semaphore + NOC partners
@@ -235,11 +236,13 @@ int main(int argc, char** argv) {
     // Convert the unpacked bfloat16 values back to float for printing
     first_bfloat_value = two_bfloats.first.to_float();
     second_bfloat_value = two_bfloats.second.to_float();
-    first_bfloat_value = first_bfloat_value * TOTAL_NODES;
-    second_bfloat_value = second_bfloat_value * TOTAL_NODES;
-    uint32_t output =
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
-    printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
+    for (int i = 0; i < SWING_ALGO_STEPS; i++) {
+        first_bfloat_value = first_bfloat_value * 2;
+        second_bfloat_value = second_bfloat_value * 2;
+        uint32_t output =
+            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
+        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
+    }
     CloseDevice(device);
 }
 
