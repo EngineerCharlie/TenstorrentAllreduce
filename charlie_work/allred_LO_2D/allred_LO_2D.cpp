@@ -249,31 +249,47 @@ int main(int argc, char** argv) {
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
+    bool all_match = true;
+
     std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
     std::vector<bfloat16> src_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec);
 
-    /* Print actual and expected results*/
-    printf("         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
+    for (size_t i = 0; i < num_els * 2; i++) {
+        if (src_vec_b16[i].to_float() * TOTAL_NODES != result_vec_b16[i].to_float()) {
+            printf("Mismatch at index %zu:\n", i);
+            printf("  Expected: %d\n", (int)src_vec_b16[i].to_float() * TOTAL_NODES);
+            printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
+            all_match = false;
+            break;  // Stop after first mismatch
+        }
+    }
+    if (all_match) {
+        printf("All values match!\n");
+    } else {
+        /* Print actual and expected results*/
+        printf(
+            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
 
-    uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-        src_vec_b16[0].to_float() * TOTAL_NODES, src_vec_b16[1].to_float() * TOTAL_NODES));
-    printf(
-        "Expected result (nocast) = %d, and after casting %d\n",
-        output,
-        (int)(TOTAL_NODES * src_vec_b16[0].to_float()));
+        uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+            src_vec_b16[0].to_float() * TOTAL_NODES, src_vec_b16[1].to_float() * TOTAL_NODES));
+        printf(
+            "Expected result (nocast) = %d, and after casting %d\n",
+            output,
+            (int)(TOTAL_NODES * src_vec_b16[0].to_float()));
 
-    printf(
-        "  Actual last result (nocast) = %d, and after casting %d\n",
-        (int)result_vec[num_els - 1],
-        (int)result_vec_b16[2 * num_els - 1].to_float());
+        printf(
+            "  Actual last result (nocast) = %d, and after casting %d\n",
+            (int)result_vec[num_els - 1],
+            (int)result_vec_b16[2 * num_els - 1].to_float());
 
-    output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-        src_vec_b16[2 * num_els - 2].to_float() * TOTAL_NODES, src_vec_b16[2 * num_els - 1].to_float() * TOTAL_NODES));
-    printf(
-        "Expected last result (nocast) = %d, and after casting %d\n",
-        output,
-        (int)(TOTAL_NODES * src_vec_b16[2 * num_els - 1].to_float()));
-
+        output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+            src_vec_b16[2 * num_els - 2].to_float() * TOTAL_NODES,
+            src_vec_b16[2 * num_els - 1].to_float() * TOTAL_NODES));
+        printf(
+            "Expected last result (nocast) = %d, and after casting %d\n",
+            output,
+            (int)(TOTAL_NODES * src_vec_b16[2 * num_els - 1].to_float()));
+    }
     CloseDevice(device);
 }
 
