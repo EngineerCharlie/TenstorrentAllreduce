@@ -25,6 +25,7 @@ int main(int argc, char** argv) {
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
+    /*Assign input args*/
     bool SWING_VERSION = true;
     if (argc >= 2 && std::stoi(argv[1]) == 1) {
         SWING_VERSION = true;
@@ -68,7 +69,7 @@ int main(int argc, char** argv) {
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size * NUM_TILES,
-        .page_size = single_tile_size* NUM_TILES,
+        .page_size = single_tile_size * NUM_TILES,
         .buffer_type = tt_metal::BufferType::DRAM};
 
     std::shared_ptr<tt::tt_metal::Buffer> src_dram_buffer = CreateBuffer(dram_config);
@@ -119,18 +120,16 @@ int main(int argc, char** argv) {
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src_vec;  //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec;     //(single_tile_size, 14);
+    std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
     int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
     if (RND_SRC < 0) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);    
+        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
     } else {
         src_vec = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
     }
-    std::vector<uint32_t> result_vec;
-    result_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 0.0f);
 
     EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, true);
-    EnqueueWriteBuffer(cq, dst_dram_buffer, result_vec, true);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(12 + 8 + 2 * SWING_ALGO_STEPS);
@@ -249,47 +248,31 @@ int main(int argc, char** argv) {
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
-    // printf("Source = %d\n", (int)src_vec[0]);  // 22 = 1102070192
-    // Unpack the two bfloat16 values from the packed uint32_t
-    int vector_size = single_tile_size / (32 * sizeof(uint32_t));
-    // print_vec_of_uint32_as_packed_bfloat16(result_vec, vector_size);
+
     std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    // for (int i = 0; i < vector_size; i += 10) {
-    //     auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[i]);
-    //     // Convert the unpacked bfloat16 values back to float for printing
-    //     bfloat16 first_bfloat_value = two_bfloats.first.to_float();
-    //     bfloat16 second_bfloat_value = two_bfloats.second.to_float();
-    //     printf("First bfloat to int = %d\n", (int)first_bfloat_value);  // 22 = 1102070192
-    // }
-    auto two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[0]);
-    float first_bfloat_value = two_bfloats.first.to_float();
-    float second_bfloat_value = two_bfloats.second.to_float();
+    std::vector<bfloat16> src_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec);
 
-    printf("         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)first_bfloat_value);
+    /* Print actual and expected results*/
+    printf("         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
 
-    two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[0]);
-    first_bfloat_value = two_bfloats.first.to_float() * TOTAL_NODES;
-    second_bfloat_value = two_bfloats.second.to_float() * TOTAL_NODES;
-    uint32_t output =
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
-    printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
-
-    two_bfloats = unpack_two_bfloat16_from_uint32(result_vec[num_els - 1]);
-    first_bfloat_value = two_bfloats.first.to_float();
-    second_bfloat_value = two_bfloats.second.to_float();
+    uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+        src_vec_b16[0].to_float() * TOTAL_NODES, src_vec_b16[1].to_float() * TOTAL_NODES));
+    printf(
+        "Expected result (nocast) = %d, and after casting %d\n",
+        output,
+        (int)(TOTAL_NODES * src_vec_b16[0].to_float()));
 
     printf(
-        "  Actual last result (nocast) = %d, and after casting %d\n", result_vec[num_els - 1], (int)first_bfloat_value);
+        "  Actual last result (nocast) = %d, and after casting %d\n",
+        (int)result_vec[num_els - 1],
+        (int)result_vec_b16[2 * num_els - 1].to_float());
 
-    two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[num_els - 1] * TOTAL_NODES);
-
-    // Convert the unpacked bfloat16 values back to float for printing
-    two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[num_els - 1]);
-    first_bfloat_value = two_bfloats.first.to_float() * TOTAL_NODES;
-    second_bfloat_value = two_bfloats.second.to_float() * TOTAL_NODES;
-    output =
-        pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
-    printf("Expected last result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
+    output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
+        src_vec_b16[2 * num_els - 2].to_float() * TOTAL_NODES, src_vec_b16[2 * num_els - 1].to_float() * TOTAL_NODES));
+    printf(
+        "Expected last result (nocast) = %d, and after casting %d\n",
+        output,
+        (int)(TOTAL_NODES * src_vec_b16[2 * num_els - 1].to_float()));
 
     CloseDevice(device);
 }

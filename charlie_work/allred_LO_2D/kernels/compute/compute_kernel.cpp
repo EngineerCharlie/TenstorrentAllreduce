@@ -9,7 +9,7 @@
 
 namespace NAMESPACE {
 void MAIN {
-    uint32_t swing_algo_steps = get_arg_val<uint32_t>(0);
+    uint32_t algo_steps = get_arg_val<uint32_t>(0);
     uint32_t this_core_x = get_arg_val<uint32_t>(1);
     uint32_t this_core_y = get_arg_val<uint32_t>(2);
     uint32_t packed_bools = get_arg_val<uint32_t>(3);
@@ -26,7 +26,7 @@ void MAIN {
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE;
-    for (uint32_t i = 0; i < swing_algo_steps; i++) {
+    for (uint32_t i = 0; i < algo_steps; i++) {
         // Signal appropriate NOC core to exchange data with other core
         SE = (packed_bools >> i) & 1;  // Extract bit i
 

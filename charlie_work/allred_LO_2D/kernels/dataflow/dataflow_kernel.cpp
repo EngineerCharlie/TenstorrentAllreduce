@@ -14,8 +14,8 @@ void kernel_main() {
     uint32_t dst_dram_noc_x = get_arg_val<uint32_t>(4);
     uint32_t dst_dram_noc_y = get_arg_val<uint32_t>(5);
 
-    uint32_t swing_algo_steps = get_arg_val<uint32_t>(6);
-    uint32_t num_tiles = get_arg_val<uint32_t>(12 + 8 + 2 * swing_algo_steps - 1);
+    uint32_t algo_steps = get_arg_val<uint32_t>(6);
+    uint32_t num_tiles = get_arg_val<uint32_t>(12 + 8 + 2 * algo_steps - 1);
 
     uint32_t this_core_x = get_arg_val<uint32_t>(7);
     uint32_t this_core_y = get_arg_val<uint32_t>(8);
@@ -53,11 +53,11 @@ void kernel_main() {
 
     uint32_t* local_array = reinterpret_cast<uint32_t*>(l1_write_addr_local);
 
-    // read in swing partner addresses
-    uint32_t dst_core_x[swing_algo_steps];
-    uint32_t dst_core_y[swing_algo_steps];
+    // read in partner addresses
+    uint32_t dst_core_x[algo_steps];
+    uint32_t dst_core_y[algo_steps];
 
-    for (int i = 0; i < (int)swing_algo_steps; i++) {
+    for (int i = 0; i < (int)algo_steps; i++) {
         dst_core_x[i] = get_arg_val<uint32_t>(11 + 2 * i);
         dst_core_y[i] = get_arg_val<uint32_t>(12 + 2 * i);
     }
@@ -70,12 +70,12 @@ void kernel_main() {
     uint32_t semaphore_1[num_sem_1];
     volatile tt_l1_ptr uint32_t* semaphore_1_ptr[num_sem_1];
     for (int i = 0; i < num_sem_0; i++) {
-        semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * swing_algo_steps + i));
+        semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * algo_steps + i));
         semaphore_0_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_0[i]);
     }
 
     for (int i = 0; i < num_sem_1; i++) {
-        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * swing_algo_steps + num_sem_0 + i));
+        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * algo_steps + num_sem_0 + i));
         semaphore_1_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_1[i]);
     }
 
@@ -94,7 +94,7 @@ void kernel_main() {
     bool direction_SE;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t i = 0; i < swing_algo_steps; i++) {
+    for (uint32_t i = 0; i < algo_steps; i++) {
         direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
         if (this_core_SE == direction_SE) {
             dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
