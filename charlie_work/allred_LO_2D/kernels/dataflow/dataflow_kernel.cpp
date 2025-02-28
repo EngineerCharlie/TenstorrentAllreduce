@@ -15,6 +15,7 @@ void kernel_main() {
     uint32_t dst_dram_noc_y = get_arg_val<uint32_t>(5);
 
     uint32_t swing_algo_steps = get_arg_val<uint32_t>(6);
+    uint32_t num_tiles = get_arg_val<uint32_t>(12 + 8 + 2 * swing_algo_steps - 1);
 
     uint32_t this_core_x = get_arg_val<uint32_t>(7);
     uint32_t this_core_y = get_arg_val<uint32_t>(8);
@@ -80,17 +81,18 @@ void kernel_main() {
 
     // read ublocks from src to local
     if (!this_core_SE) {
-        cb_reserve_back(cb_id_local, 1);
-        noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data);
+        cb_reserve_back(cb_id_local, num_tiles);
+        noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data * num_tiles);
         noc_async_read_barrier();
-        cb_push_back(cb_id_local, 1);
+        // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr511: " << local_array[511]<< " arr512: " << local_array[512]<<ENDL();
+        cb_push_back(cb_id_local, num_tiles);
     }
 
     uint64_t dst_noc_semaphore_0;
     uint64_t dst_noc_semaphore_1;
     uint64_t dst_noc_addr;
     bool direction_SE;
-    
+
     // Signal appropriate NOC core to exchange data with other core
     for (uint32_t i = 0; i < swing_algo_steps; i++) {
         direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
@@ -101,7 +103,7 @@ void kernel_main() {
 
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
-            cb_wait_front(cb_id_local, 1);
+            cb_wait_front(cb_id_local, num_tiles);
             cb_pop_front(cb_id_this, 1);
 
             // await first sem from comm partner
@@ -110,22 +112,25 @@ void kernel_main() {
             noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
 
             // write local array to com partner
-            noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data);
+            noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * num_tiles);
             noc_async_write_barrier();
-            cb_pop_front(cb_id_local, 1);
+            cb_pop_front(cb_id_local, num_tiles);
 
             // await second sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_1, 1);
             noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
             noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
-            cb_push_back(cb_id_recv, 1);
+            cb_push_back(cb_id_recv, num_tiles);
         }
     }
     cb_wait_front(cb_id_this, 1);
     cb_pop_front(cb_id_this, 1);
     if (this_core_SE == direction_SE) {
-        noc_async_write(l1_write_addr_local, host_noc_addr, ublock_size_bytes_data);
+        noc_async_write(l1_write_addr_local, host_noc_addr, ublock_size_bytes_data * num_tiles);
         noc_async_write_barrier();
     }
-    DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum: " << local_array[0] << ENDL();
+    int num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
+    DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
+           << " and sum[last]" << local_array[num_els - 1] << ENDL();
+    // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]<<ENDL();
 }
