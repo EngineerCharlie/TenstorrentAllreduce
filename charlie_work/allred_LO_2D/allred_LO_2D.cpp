@@ -72,13 +72,17 @@ int main(int argc, char** argv) {
         .page_size = single_tile_size * NUM_TILES,
         .buffer_type = tt_metal::BufferType::DRAM};
 
-    std::shared_ptr<tt::tt_metal::Buffer> src_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer = CreateBuffer(dram_config);
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
 
-    auto src_dram_noc_coord = src_dram_buffer->noc_coordinates();
+    auto src_0_dram_noc_coord = src_0_dram_buffer->noc_coordinates();
+    auto src_1_dram_noc_coord = src_1_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
-    uint32_t src_dram_noc_x = src_dram_noc_coord.x;
-    uint32_t src_dram_noc_y = src_dram_noc_coord.y;
+    uint32_t src_0_dram_noc_x = src_0_dram_noc_coord.x;
+    uint32_t src_0_dram_noc_y = src_0_dram_noc_coord.y;
+    uint32_t src_1_dram_noc_x = src_1_dram_noc_coord.x;
+    uint32_t src_1_dram_noc_y = src_1_dram_noc_coord.y;
     uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
@@ -120,23 +124,27 @@ int main(int argc, char** argv) {
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src_vec;     //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
     std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
     int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
     if (RND_SRC < 0) {
-        src_vec = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
+        src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
+        src_vec_1 = src_vec_0;
     } else {
-        src_vec = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
+        src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
+        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
     }
 
-    EnqueueWriteBuffer(cq, src_dram_buffer, src_vec, true);
+    EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
+    EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(12 + 8 + 2 * SWING_ALGO_STEPS);
-    dataflow_args[0] = src_dram_buffer->address();
+    // dataflow_args[0] = src_0_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
-    dataflow_args[2] = src_dram_noc_x;
-    dataflow_args[3] = src_dram_noc_y;
+    // dataflow_args[2] = src_0_dram_noc_x;
+    // dataflow_args[3] = src_0_dram_noc_y;
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = SWING_ALGO_STEPS;
@@ -151,7 +159,8 @@ int main(int argc, char** argv) {
     compute_args[4] = NUM_TILES;
 
     /*reused variable initialization*/
-    KernelHandle dataflow_kernel;
+    KernelHandle dataflow_0_kernel;
+    KernelHandle dataflow_1_kernel;
     KernelHandle compute_kernel;
     CoreCoord logical_core;
     CoreCoord physical_core;
@@ -167,6 +176,15 @@ int main(int argc, char** argv) {
         dataflow_args[8] = (uint32_t)physical_core.y;
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
+        if (core_array[core_i].x % 2 == 0) {
+            dataflow_args[0] = src_1_dram_buffer->address();
+            dataflow_args[2] = src_1_dram_noc_x;
+            dataflow_args[3] = src_1_dram_noc_y;
+        } else {
+            dataflow_args[0] = src_0_dram_buffer->address();
+            dataflow_args[2] = src_0_dram_noc_x;
+            dataflow_args[3] = src_0_dram_noc_y;
+        }
 
         horizontal_step = true;  // Start calcs on hrz step
         if (!SWING_VERSION) {
@@ -211,23 +229,23 @@ int main(int argc, char** argv) {
 
         /*SE Kernel*/
         dataflow_args[9] = (uint32_t)true;
-        dataflow_kernel = CreateKernel(
+        dataflow_1_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_LO_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
-        SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
+        SetRuntimeArgs(program, dataflow_1_kernel, core_array[core_i], dataflow_args);
 
         /*NW Kernel*/
         dataflow_args[9] = (uint32_t)false;
-        dataflow_kernel = CreateKernel(
+        dataflow_0_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_LO_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
-        SetRuntimeArgs(program, dataflow_kernel, core_array[core_i], dataflow_args);
+        SetRuntimeArgs(program, dataflow_0_kernel, core_array[core_i], dataflow_args);
 
         /* compute kernel */
         compute_kernel = CreateKernel(
@@ -250,45 +268,55 @@ int main(int argc, char** argv) {
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
     bool all_match = true;
+    int num_matches = 0;
 
     std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    std::vector<bfloat16> src_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec);
-
+    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
+    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+    int last_matching_index = 0;
+    float error = 32.0;
     for (size_t i = 0; i < num_els * 2; i++) {
-        if (src_vec_b16[i].to_float() * TOTAL_NODES != result_vec_b16[i].to_float()) {
+        trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
+                                     (float)(TOTAL_NODES / 2));
+        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
+                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
             printf("Mismatch at index %zu:\n", i);
-            printf("  Expected: %d\n", (int)src_vec_b16[i].to_float() * TOTAL_NODES);
+            printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
             printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
+            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
             all_match = false;
-            break;  // Stop after first mismatch
+        } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
+            last_matching_index = i;
+            num_matches++;
         }
     }
+
     if (all_match) {
         printf("All values match!\n");
     } else {
         /* Print actual and expected results*/
+        printf("Total matches: %d\n", num_matches);
+        printf(
+            "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
         printf(
             "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
 
-        uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            src_vec_b16[0].to_float() * TOTAL_NODES, src_vec_b16[1].to_float() * TOTAL_NODES));
-        printf(
-            "Expected result (nocast) = %d, and after casting %d\n",
-            output,
-            (int)(TOTAL_NODES * src_vec_b16[0].to_float()));
+        uint32_t output =
+            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
+        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
 
         printf(
             "  Actual last result (nocast) = %d, and after casting %d\n",
             (int)result_vec[num_els - 1],
             (int)result_vec_b16[2 * num_els - 1].to_float());
 
-        output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            src_vec_b16[2 * num_els - 2].to_float() * TOTAL_NODES,
-            src_vec_b16[2 * num_els - 1].to_float() * TOTAL_NODES));
+        output = pack_two_bfloat16_into_uint32(
+            std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
         printf(
             "Expected last result (nocast) = %d, and after casting %d\n",
             output,
-            (int)(TOTAL_NODES * src_vec_b16[2 * num_els - 1].to_float()));
+            (int)trgt_vec_b16[2 * num_els - 1].to_float());
     }
     CloseDevice(device);
 }

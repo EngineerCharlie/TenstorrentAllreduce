@@ -37,24 +37,27 @@ void MAIN {
         }
 
         // Await signal from NOC that data is on local memory
-        cb_wait_front(cb_id_recv, num_tiles);
         cb_reserve_back(cb_id_local, num_tiles);
+        cb_wait_front(cb_id_recv, num_tiles);
 
         // add vectors
-        for (uint32_t tile_offset = 0; tile_offset < num_tiles; tile_offset++) {
+        for (uint32_t i = 0; i < num_tiles; i++) {
             tile_regs_acquire();
-            add_tiles(cb_id_local, cb_id_recv, tile_offset, tile_offset, tile_offset);
+            // TODO: Do 8 tile registers at once
+            add_tiles(cb_id_local, cb_id_recv, i, i, 0);
             tile_regs_commit();
-        
+
             tile_regs_wait();
-            pack_tile(tile_offset, cb_id_local,tile_offset);
+            pack_tile(0, cb_id_local, i);  // i must be lower than 8
+            // TODO: Do 8 tile registers at once
             tile_regs_release();
         }
+
         cb_push_back(cb_id_local, num_tiles);
         cb_pop_front(cb_id_recv, num_tiles);
     }
     cb_push_back(cb_id_SE, 1);
     cb_push_back(cb_id_NW, 1);
-    DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
+    // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
 }
 }  // namespace NAMESPACE

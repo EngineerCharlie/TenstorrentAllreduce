@@ -52,6 +52,7 @@ void kernel_main() {
     uint32_t l1_write_addr_local = get_write_ptr(cb_id_local);
 
     uint32_t* local_array = reinterpret_cast<uint32_t*>(l1_write_addr_local);
+    uint32_t* recv_array = reinterpret_cast<uint32_t*>(l1_write_addr_recv);
 
     // read in partner addresses
     uint32_t dst_core_x[algo_steps];
@@ -84,7 +85,6 @@ void kernel_main() {
         cb_reserve_back(cb_id_local, num_tiles);
         noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data * num_tiles);
         noc_async_read_barrier();
-        // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr511: " << local_array[511]<< " arr512: " << local_array[512]<<ENDL();
         cb_push_back(cb_id_local, num_tiles);
     }
 
@@ -104,6 +104,9 @@ void kernel_main() {
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
             cb_wait_front(cb_id_local, num_tiles);
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096 post compute: " <<
+            // recv_array[4095]
+            //        << ENDL();
             cb_pop_front(cb_id_this, 1);
 
             // await first sem from comm partner
@@ -120,6 +123,9 @@ void kernel_main() {
             noc_semaphore_inc(dst_noc_semaphore_1, 1);
             noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
             noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096: " <<
+            // recv_array[4096]<<ENDL();
+            cb_reserve_back(cb_id_recv, num_tiles);
             cb_push_back(cb_id_recv, num_tiles);
         }
     }
@@ -130,7 +136,7 @@ void kernel_main() {
         noc_async_write_barrier();
     }
     int num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
-    DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
-           << " and sum[last]" << local_array[num_els - 1] << ENDL();
+    // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
+    //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]<<ENDL();
 }
