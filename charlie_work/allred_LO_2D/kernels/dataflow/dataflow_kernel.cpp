@@ -8,14 +8,14 @@
 
 void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
-    uint32_t dst_addr = get_arg_val<uint32_t>(1);
+    uint32_t dst0_addr = get_arg_val<uint32_t>(1);
     uint32_t src0_dram_noc_x = get_arg_val<uint32_t>(2);
     uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
-    uint32_t dst_dram_noc_x = get_arg_val<uint32_t>(4);
-    uint32_t dst_dram_noc_y = get_arg_val<uint32_t>(5);
+    uint32_t dst0_dram_noc_x = get_arg_val<uint32_t>(4);
+    uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
-    uint32_t num_tiles = get_arg_val<uint32_t>(12 + 8 + 2 * algo_steps - 1);
+    uint32_t num_tiles = get_arg_val<uint32_t>(11);
 
     uint32_t this_core_x = get_arg_val<uint32_t>(7);
     uint32_t this_core_y = get_arg_val<uint32_t>(8);
@@ -25,7 +25,7 @@ void kernel_main() {
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " started "<< ENDL();
 
     uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
-    uint64_t host_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_addr);
+    uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr);
 
     // setup circular buffers
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
@@ -59,8 +59,8 @@ void kernel_main() {
     uint32_t dst_core_y[algo_steps];
 
     for (int i = 0; i < (int)algo_steps; i++) {
-        dst_core_x[i] = get_arg_val<uint32_t>(11 + 2 * i);
-        dst_core_y[i] = get_arg_val<uint32_t>(12 + 2 * i);
+        dst_core_x[i] = get_arg_val<uint32_t>(12 + 2 * i);
+        dst_core_y[i] = get_arg_val<uint32_t>(13 + 2 * i);
     }
 
     // Read and setup semaphores
@@ -71,12 +71,12 @@ void kernel_main() {
     uint32_t semaphore_1[num_sem_1];
     volatile tt_l1_ptr uint32_t* semaphore_1_ptr[num_sem_1];
     for (int i = 0; i < num_sem_0; i++) {
-        semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * algo_steps + i));
+        semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(12 + 2 * algo_steps + i));
         semaphore_0_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_0[i]);
     }
 
     for (int i = 0; i < num_sem_1; i++) {
-        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(11 + 2 * algo_steps + num_sem_0 + i));
+        semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(12 + 2 * algo_steps + num_sem_0 + i));
         semaphore_1_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_1[i]);
     }
 
@@ -132,7 +132,7 @@ void kernel_main() {
     cb_wait_front(cb_id_this, 1);
     cb_pop_front(cb_id_this, 1);
     if (this_core_SE == direction_SE) {
-        noc_async_write(l1_write_addr_local, host_noc_addr, ublock_size_bytes_data * num_tiles);
+        noc_async_write(l1_write_addr_local, dst0_noc_addr, ublock_size_bytes_data * num_tiles);
         noc_async_write_barrier();
     }
     int num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);

@@ -44,11 +44,11 @@ void MAIN {
         for (uint32_t i = 0; i < num_tiles; i++) {
             tile_regs_acquire();
             // TODO: Do 8 tile registers at once
-            add_tiles(cb_id_local, cb_id_recv, i, i, 0);
+            add_tiles(cb_id_local, cb_id_recv, i, i, i % 8);
             tile_regs_commit();
 
             tile_regs_wait();
-            pack_tile(0, cb_id_local, i);  // i must be lower than 8
+            pack_tile(i % 8, cb_id_local, i);  // i must be lower than 8
             // TODO: Do 8 tile registers at once
             tile_regs_release();
         }

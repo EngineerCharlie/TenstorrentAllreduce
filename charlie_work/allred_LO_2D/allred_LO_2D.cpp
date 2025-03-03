@@ -52,6 +52,14 @@ int main(int argc, char** argv) {
         NUM_TILES = std::stoi(argv[5]);
     }
 
+    int TILE_SIZE_FACTOR = 1;
+    if (argc >= 7) {
+        TILE_SIZE_FACTOR = std::stoi(argv[6]);
+        if (TILE_SIZE_FACTOR < 1 || TILE_SIZE_FACTOR > 4) {
+            TILE_SIZE_FACTOR = 1;
+        }
+    }
+
     /*Setup core array (full grid or subsection)*/
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
@@ -64,33 +72,13 @@ int main(int argc, char** argv) {
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
-    /*Setup dram to pass data to/from cores*/
-    constexpr uint32_t single_tile_size = 1 * 2048;
-    tt_metal::InterleavedBufferConfig dram_config{
-        .device = device,
-        .size = single_tile_size * NUM_TILES,
-        .page_size = single_tile_size * NUM_TILES,
-        .buffer_type = tt_metal::BufferType::DRAM};
-
-    std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
-
-    auto src_0_dram_noc_coord = src_0_dram_buffer->noc_coordinates();
-    auto src_1_dram_noc_coord = src_1_dram_buffer->noc_coordinates();
-    auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_dram_noc_x = src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = src_0_dram_noc_coord.y;
-    uint32_t src_1_dram_noc_x = src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = src_1_dram_noc_coord.y;
-    uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
-    uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     uint32_t num_data_tiles = NUM_TILES;
     uint32_t num_recv_tiles = NUM_TILES;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
+    uint32_t single_tile_size = TILE_SIZE_FACTOR * 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
@@ -123,6 +111,28 @@ int main(int argc, char** argv) {
             .set_page_size(cb_index_local, single_tile_size);
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
+
+    /*Setup dram to pass data to/from cores*/
+    tt_metal::InterleavedBufferConfig dram_config{
+        .device = device,
+        .size = single_tile_size * NUM_TILES,
+        .page_size = single_tile_size * NUM_TILES,
+        .buffer_type = tt_metal::BufferType::DRAM};
+
+    std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
+
+    auto src_0_dram_noc_coord = src_0_dram_buffer->noc_coordinates();
+    auto src_1_dram_noc_coord = src_1_dram_buffer->noc_coordinates();
+    auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
+    uint32_t src_0_dram_noc_x = src_0_dram_noc_coord.x;
+    uint32_t src_0_dram_noc_y = src_0_dram_noc_coord.y;
+    uint32_t src_1_dram_noc_x = src_1_dram_noc_coord.x;
+    uint32_t src_1_dram_noc_y = src_1_dram_noc_coord.y;
+    uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
+    uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
+
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
     std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
@@ -139,6 +149,7 @@ int main(int argc, char** argv) {
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 
+
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(12 + 8 + 2 * SWING_ALGO_STEPS);
     // dataflow_args[0] = src_0_dram_buffer->address();
@@ -148,9 +159,9 @@ int main(int argc, char** argv) {
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = SWING_ALGO_STEPS;
-    dataflow_args[12 + 8 + 2 * SWING_ALGO_STEPS - 1] = NUM_TILES;
+    dataflow_args[11] = NUM_TILES;
     for (int i = 0; i < 8; i++) {
-        dataflow_args[11 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+        dataflow_args[12 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
     /*Compute kernel arg initialization*/
@@ -203,22 +214,23 @@ int main(int argc, char** argv) {
                                                : CoreCoord{node_other_position, recv_node};
 
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[11 + 2 * recdub_step] = (uint32_t)physical_core.x;
-                dataflow_args[12 + 2 * recdub_step] = (uint32_t)physical_core.y;
+                dataflow_args[12 + 2 * recdub_step] = (uint32_t)physical_core.x;
+                dataflow_args[13 + 2 * recdub_step] = (uint32_t)physical_core.y;
 
                 message_pass_depth = horizontal_step ? message_pass_depth : 2 * message_pass_depth;
                 horizontal_step = !horizontal_step;
             }
         } else {
             /*Swing communication partner calculations*/
+            int comm_partner_idx;
             for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step++) {
-                int comm_partner_idx =
+                comm_partner_idx =
                     get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
                 logical_core = core_array[comm_partner_idx];
 
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[11 + 2 * swing_step] = (uint32_t)physical_core.x;
-                dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.y;
+                dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.x;
+                dataflow_args[13 + 2 * swing_step] = (uint32_t)physical_core.y;
                 horizontal_step = !horizontal_step;
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
@@ -231,7 +243,7 @@ int main(int argc, char** argv) {
         dataflow_args[9] = (uint32_t)true;
         dataflow_1_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_LO_2D/kernels/dataflow/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
