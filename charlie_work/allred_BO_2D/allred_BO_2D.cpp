@@ -12,11 +12,12 @@
 using namespace tt;
 using namespace tt::tt_metal;
 
-int get_comm_partner_2D(int, int, bool, int, int);
-void get_comm_sendrecv_indexes(int, int, int*, bool, int, int);
+int get_comm_partner_swing_2D(int, int, bool, int, int);
+void get_swing_block_comm_indexes(int, int, uint32_t*, bool, int, int);
+int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
+void get_recdub_block_comm_indexes(int, int, uint32_t*, bool, int, int, int, uint32_t&);
 uint32_t get_SE(int, int);
 int highest_power_of_two(int);
-void calculate_recursive_doubling_step_partner(const CoreCoord&, int, bool, int, int&, int&, uint32_t&);
 
 int main(int argc, char** argv) {
     /* Silicon accelerator setup */
@@ -184,7 +185,8 @@ int main(int argc, char** argv) {
     bool horizontal_step;
     bool sending_SE;
     uint32_t step_directions = 0b00000;
-    int node_position, node_other_position, message_pass_depth, recv_node;
+    uint32_t dummy_step_directions = 0b00000;
+    int node_position, node_other_position, message_pass_depth, recv_node, comm_partner_idx;
 
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
@@ -204,7 +206,7 @@ int main(int argc, char** argv) {
         }
 
         /* set block indexes to 0 */
-        for (int i = 20 + 2 * SWING_ALGO_STEPS; i < 32 + 4 * SWING_ALGO_STEPS; i++) {
+        for (int i = 20 + 2 * SWING_ALGO_STEPS; i < 20 + 4 * SWING_ALGO_STEPS; i++) {
             dataflow_args[i] = 0;
         }
 
@@ -213,34 +215,45 @@ int main(int argc, char** argv) {
             /*Recursive doubling algo partner node calculations*/
             message_pass_depth = 1;
             for (int recdub_step = 0; recdub_step < SWING_ALGO_STEPS; recdub_step++) {
-                calculate_recursive_doubling_step_partner(
-                    core_array[core_i],
-                    recdub_step,
-                    horizontal_step,
-                    message_pass_depth,
-                    recv_node,
-                    node_other_position,
-                    step_directions);
-                logical_core = horizontal_step ? CoreCoord{recv_node, node_other_position}
-                                               : CoreCoord{node_other_position, recv_node};
+                comm_partner_idx = get_comm_partner_recdub_2D(
+                    core_i, recdub_step, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
 
+                logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[12 + 2 * recdub_step] = (uint32_t)physical_core.x;
                 dataflow_args[13 + 2 * recdub_step] = (uint32_t)physical_core.y;
+
+                get_recdub_block_comm_indexes(
+                    core_i,
+                    recdub_step,
+                    &dataflow_args[20 + 2 * SWING_ALGO_STEPS + 2 * recdub_step],
+                    horizontal_step,
+                    SIDE_LENGTH,
+                    TOTAL_NODES,
+                    message_pass_depth,
+                    dummy_step_directions);
 
                 message_pass_depth = horizontal_step ? message_pass_depth : 2 * message_pass_depth;
                 horizontal_step = !horizontal_step;
             }
         } else {
             /*Swing communication partner calculations*/
-            int comm_partner_idx;
             for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step++) {
-                comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-                logical_core = core_array[comm_partner_idx];
+                comm_partner_idx =
+                    get_comm_partner_swing_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
 
+                logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[12 + 2 * swing_step] = (uint32_t)physical_core.x;
                 dataflow_args[13 + 2 * swing_step] = (uint32_t)physical_core.y;
+
+                get_swing_block_comm_indexes(
+                    core_i,
+                    swing_step,
+                    &dataflow_args[20 + 2 * SWING_ALGO_STEPS + 2 * swing_step],
+                    horizontal_step,
+                    SIDE_LENGTH,
+                    TOTAL_NODES);
                 horizontal_step = !horizontal_step;
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
@@ -343,7 +356,7 @@ int main(int argc, char** argv) {
     CloseDevice(device);
 }
 
-int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
+int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int row = node / SIDE_LENGTH;
     int col = node % SIDE_LENGTH;
     step = step / 2;
@@ -370,37 +383,65 @@ int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGT
     return comm_partner;  // will  loop round  to  always be in  range
 }
 
-void calculate_recursive_doubling_step_partner(
-    const CoreCoord& core,
-    int recdub_step,
-    bool horizontal_step,
-    int message_pass_depth,
-    int& recv_node,
-    int& node_other_position,
-    uint32_t& step_directions) {
-    int node_position = horizontal_step ? core.x : core.y;
-    node_other_position = !horizontal_step ? core.x : core.y;
-
-    bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
-    step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 << recdub_step));
-
-    recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
-}
-
-void get_comm_sendrecv_indexes(
-    int node, int step, int* blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
+void get_swing_block_comm_indexes(
+    int node, int step, uint32_t* blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int num_steps = (int)log2((double)TOTAL_NODES);
     if (step >= num_steps) {
         return;
     }
     for (int s = step; s < num_steps; s++) {
-        int peer = get_comm_partner_2D(node, s, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+        int peer = get_comm_partner_swing_2D(node, s, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
         // blocks[peer] = 1;
         *blocks = *blocks | (1 << peer);
         // step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 <<
         // recdub_step));
         horizontal_step = !horizontal_step;
-        get_comm_sendrecv_indexes(peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+        get_swing_block_comm_indexes(peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+    }
+    return;
+}
+
+int get_comm_partner_recdub_2D(
+    int node,
+    int recdub_step,
+    bool horizontal_step,
+    int message_pass_depth,
+    uint32_t& step_directions,
+    int SIDE_LENGTH) {
+    int row = node / SIDE_LENGTH;
+    int col = node % SIDE_LENGTH;
+    int node_position = horizontal_step ? col : row;
+    int node_other_position = !horizontal_step ? col : row;
+
+    bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
+    step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 << recdub_step));
+
+    int recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
+    return horizontal_step ? node_position + node_other_position * SIDE_LENGTH
+                           : node_position * SIDE_LENGTH + node_other_position;
+}
+
+void get_recdub_block_comm_indexes(
+    int node,
+    int step,
+    uint32_t* blocks,
+    bool horizontal_step,
+    int SIDE_LENGTH,
+    int TOTAL_NODES,
+    int message_pass_depth,
+    uint32_t& step_directions) {
+    int num_steps = (int)log2((double)TOTAL_NODES);
+    if (step >= num_steps) {
+        return;
+    }
+    for (int s = step; s < num_steps; s++) {
+        int peer =
+            get_comm_partner_recdub_2D(node, s, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
+        // blocks[peer] = 1;
+        *blocks = *blocks | (1 << peer);
+        horizontal_step = !horizontal_step;
+        get_recdub_block_comm_indexes(
+            peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES, message_pass_depth, step_directions);
     }
     return;
 }
