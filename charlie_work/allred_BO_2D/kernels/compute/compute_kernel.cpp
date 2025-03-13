@@ -14,6 +14,7 @@ void MAIN {
     uint32_t this_core_y = get_arg_val<uint32_t>(2);
     uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
+    uint32_t num_tiles_per_node = get_arg_val<uint32_t>(5);
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
     constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
     constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
@@ -22,8 +23,8 @@ void MAIN {
 
     uint64_t block_indexes[algo_steps];
     for (int i = 0; i < (int)algo_steps; i++) {
-        uint64_t low_bits = get_arg_val<uint32_t>(5 + 2 * i);
-        uint64_t high_bits = get_arg_val<uint32_t>(6 + 2 * i);
+        uint64_t low_bits = get_arg_val<uint32_t>(6 + 2 * i);
+        uint64_t high_bits = get_arg_val<uint32_t>(7 + 2 * i);
         block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
@@ -63,21 +64,21 @@ void MAIN {
             tile_regs_release();
             // }
         }
-        DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
-        for (int n_block = 0; n_block < 64; n_block++) {
-            recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-            if (recv_block) {
-                int blocks_to_send = 0;
-                DPRINT_MATH(DPRINT << "receiving from: " << n_block << ENDL());
-                while (recv_block && n_block < 64) {
-                    blocks_to_send++;
-                    n_block++;
-                    recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-                }
-                DPRINT_MATH(DPRINT << " for blocks: " << blocks_to_send << ENDL());
-                // noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * blocks_to_send);
-            }
-        }
+        // DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
+        // for (int n_block = 0; n_block < 64; n_block++) {
+        //     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+        //     if (recv_block) {
+        //         int blocks_to_send = 0;
+        //         // DPRINT_MATH(DPRINT << "receiving from: " << n_block << ENDL());
+        //         while (recv_block && n_block < 64) {
+        //             blocks_to_send++;
+        //             n_block++;
+        //             recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+        //         }
+        //         // DPRINT_MATH(DPRINT << " for blocks: " << blocks_to_send << ENDL());
+        //         // noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * blocks_to_send);
+        //     }
+        // }
 
         cb_push_back(cb_id_local, num_tiles);
         cb_pop_front(cb_id_recv, num_tiles);

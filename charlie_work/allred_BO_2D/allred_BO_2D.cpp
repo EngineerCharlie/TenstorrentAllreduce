@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
     } else {
         SIDE_LENGTH = 1;
     }
+    uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
+
     int RND_SRC = 0;
     if (argc >= 5) {
         RND_SRC = std::stoi(argv[4]);
@@ -63,7 +65,7 @@ int main(int argc, char** argv) {
     if (argc >= 6) {
         NUM_TILES = std::stoi(argv[5]);
     }
-    NUM_TILES = NUM_TILES * 64;
+    NUM_TILES = NUM_TILES * TOTAL_NODES;
 
     int TILE_SIZE_FACTOR = 1;
     if (argc >= 7) {
@@ -74,7 +76,6 @@ int main(int argc, char** argv) {
     }
 
     /*Setup core array (full grid or subsection)*/
-    uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
     uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
     CoreCoord start_core = {0, 0};
     CoreCoord end_core = {SIDE_LENGTH - 1, SIDE_LENGTH - 1};
@@ -161,7 +162,7 @@ int main(int argc, char** argv) {
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(13 + 2 * SWING_ALGO_STEPS + 8 + 2 * SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(14 + 2 * SWING_ALGO_STEPS + 8 + 2 * SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
     6: num steps
@@ -170,23 +171,26 @@ int main(int argc, char** argv) {
     10: is_SE
     11: step_directions
     12: num_tiles
-    13-24: core x, y for each step
-    25-32: semaphores for each step
-    33-44: block indexes to send at each step
+    13: tiles_per_node
+    14-25: core x, y for each step
+    26-33: semaphores for each step
+    34-45: block indexes to send at each step
     */
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = SWING_ALGO_STEPS;
     dataflow_args[12] = NUM_TILES;
+    dataflow_args[13] = TOTAL_NODES / NUM_TILES;  // tiles per node
     for (int i = 0; i < 8; i++) {
-        dataflow_args[13 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+        dataflow_args[14 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
     /*Compute kernel arg initialization*/
     std::vector<uint32_t> compute_args(5 + 2 * SWING_ALGO_STEPS);
     compute_args[0] = SWING_ALGO_STEPS;
     compute_args[4] = NUM_TILES;
+    compute_args[5] = TOTAL_NODES / NUM_TILES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel;
@@ -220,10 +224,10 @@ int main(int argc, char** argv) {
 
         /* set block indexes to 0 */
         for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
-            dataflow_args[21 + 2 * SWING_ALGO_STEPS + i] = 0;
+            dataflow_args[22 + 2 * SWING_ALGO_STEPS + i] = 0;
         }
         for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
-            compute_args[5 + i] = 0;
+            compute_args[6 + i] = 0;
         }
 
         horizontal_step = true;  // Start calcs on hrz step
@@ -236,17 +240,17 @@ int main(int argc, char** argv) {
 
                 logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[13 + 2 * algo_step] = (uint32_t)physical_core.x;
-                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.y;
+                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
+                dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[21 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t* blocks_to_recv = &compute_args[5 + 2 * algo_step];
+                uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -294,17 +298,17 @@ int main(int argc, char** argv) {
 
                 logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[13 + 2 * algo_step] = (uint32_t)physical_core.x;
-                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.y;
+                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
+                dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[21 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t* blocks_to_recv = &compute_args[5 + 2 * algo_step];
+                uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -381,6 +385,7 @@ int main(int argc, char** argv) {
     std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
     std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+
     int last_matching_index = 0;
     float error = 32.0;
     for (size_t i = 0; i < num_els * 2; i++) {
