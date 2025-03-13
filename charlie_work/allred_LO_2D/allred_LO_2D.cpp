@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     /*Assign input args*/
-    bool SWING_VERSION = true;
+    bool SWING_VERSION = false;
     if (argc >= 2 && std::stoi(argv[1]) == 1) {
         SWING_VERSION = true;
     }
@@ -72,7 +72,6 @@ int main(int argc, char** argv) {
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
-
     /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
     uint32_t num_data_tiles = NUM_TILES;
     uint32_t num_recv_tiles = NUM_TILES;
@@ -111,7 +110,6 @@ int main(int argc, char** argv) {
             .set_page_size(cb_index_local, single_tile_size);
     CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
 
-
     /*Setup dram to pass data to/from cores*/
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
@@ -148,7 +146,6 @@ int main(int argc, char** argv) {
 
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
-
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(12 + 8 + 2 * SWING_ALGO_STEPS);
@@ -224,8 +221,7 @@ int main(int argc, char** argv) {
             /*Swing communication partner calculations*/
             int comm_partner_idx;
             for (int swing_step = 0; swing_step < SWING_ALGO_STEPS; swing_step++) {
-                comm_partner_idx =
-                    get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+                comm_partner_idx = get_comm_partner_2D(core_i, swing_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
                 logical_core = core_array[comm_partner_idx];
 
                 physical_core = device->worker_core_from_logical_core(logical_core);
