@@ -22,7 +22,7 @@ void kernel_main() {
 
     bool this_core_SE = (bool)get_arg_val<uint32_t>(9);
     uint32_t packed_direction_bools = get_arg_val<uint32_t>(10);
-    DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " started "<< ENDL();
+    // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " started "<< ENDL();
 
     uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
     uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr);
@@ -62,8 +62,8 @@ void kernel_main() {
     for (int i = 0; i < (int)algo_steps; i++) {
         dst_core_x[i] = get_arg_val<uint32_t>(12 + 2 * i);
         dst_core_y[i] = get_arg_val<uint32_t>(13 + 2 * i);
-        uint64_t low_bits = get_arg_val<uint32_t>(20 + 2 * algo_steps + 2*i);
-        uint64_t high_bits = get_arg_val<uint32_t>(21 + 2 * algo_steps + 2*i);
+        uint64_t low_bits = get_arg_val<uint32_t>(20 + 2 * algo_steps + 2 * i);
+        uint64_t high_bits = get_arg_val<uint32_t>(21 + 2 * algo_steps + 2 * i);
         block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
@@ -92,9 +92,7 @@ void kernel_main() {
         cb_push_back(cb_id_local, num_tiles);
     }
 
-    uint64_t dst_noc_semaphore_0;
-    uint64_t dst_noc_semaphore_1;
-    uint64_t dst_noc_addr;
+    uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
@@ -104,37 +102,40 @@ void kernel_main() {
             dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
             dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
             dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
-            DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL();
-
             // await sem from compute then reserve cb
             cb_wait_front(cb_id_this, 1);
             cb_wait_front(cb_id_local, num_tiles);
+            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096 post compute: " <<
+            // recv_array[4095]
+            //        << ENDL();
             cb_pop_front(cb_id_this, 1);
 
             // await first sem from comm partner
             noc_semaphore_inc(dst_noc_semaphore_0, 1);
             noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
             noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
+             
+            // DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL();
 
             for (int n_block = 0; n_block < 64; n_block++) {
                 send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-                DPRINT << (int)send_block << ENDL();
                 if (send_block) {
                     dst_noc_addr = get_noc_addr(
                         dst_core_x[i], dst_core_y[i], l1_write_addr_recv + ublock_size_bytes_data * n_block);
                     int blocks_to_send = 0;
-                    while (send_block) {
+                    // DPRINT << "Sending from: " << n_block << ENDL();
+                    while (send_block && n_block < 64) {
                         blocks_to_send++;
                         n_block++;
                         send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                     }
-                    DPRINT << "Sending from: " << l1_write_addr_recv + ublock_size_bytes_data * n_block
-                           << " for ? blocks: " << blocks_to_send << ENDL();
+                    // DPRINT << " for blocks: " << blocks_to_send << ENDL();
                     // noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * blocks_to_send);
                 }
             }
 
             dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
+
             // write local array to com partner
             noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * num_tiles);
             noc_async_write_barrier();
@@ -157,7 +158,7 @@ void kernel_main() {
         noc_async_write_barrier();
     }
     int num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
-    DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
-           << " and sum[last]" << local_array[num_els - 1] << ENDL();
+    // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
+    //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]<<ENDL();
 }
