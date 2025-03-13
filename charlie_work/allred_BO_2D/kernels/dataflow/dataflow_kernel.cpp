@@ -16,7 +16,8 @@ void kernel_main() {
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
-    uint32_t num_tiles_per_node = get_arg_val<uint32_t>(13);
+    uint32_t num_tiles_per_node = get_arg_val<uint32_t>(13);    
+    uint32_t total_nodes = num_tiles / num_tiles_per_node;
 
     uint32_t this_core_x = get_arg_val<uint32_t>(7);
     uint32_t this_core_y = get_arg_val<uint32_t>(8);
@@ -60,7 +61,7 @@ void kernel_main() {
     uint32_t dst_core_y[algo_steps];
     uint64_t block_indexes[algo_steps];
 
-    for (int i = 0; i < (int)algo_steps; i++) {
+    for (uint32_t i = 0; i < algo_steps; i++) {
         dst_core_x[i] = get_arg_val<uint32_t>(14 + 2 * i);
         dst_core_y[i] = get_arg_val<uint32_t>(15 + 2 * i);
         uint64_t low_bits = get_arg_val<uint32_t>(22 + 2 * algo_steps + 2 * i);
@@ -69,18 +70,18 @@ void kernel_main() {
     }
 
     // Read and setup semaphores
-    const int num_sem_0 = 6;
-    const int num_sem_1 = 8 - num_sem_0;
+    const uint32_t num_sem_0 = 6;
+    const uint32_t num_sem_1 = 8 - num_sem_0;
     uint32_t semaphore_0[num_sem_0];
     volatile tt_l1_ptr uint32_t* semaphore_0_ptr[num_sem_0];
     uint32_t semaphore_1[num_sem_1];
     volatile tt_l1_ptr uint32_t* semaphore_1_ptr[num_sem_1];
-    for (int i = 0; i < num_sem_0; i++) {
+    for (uint32_t i = 0; i < num_sem_0; i++) {
         semaphore_0[i] = get_semaphore(get_arg_val<uint32_t>(14 + 2 * algo_steps + i));
         semaphore_0_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_0[i]);
     }
 
-    for (int i = 0; i < num_sem_1; i++) {
+    for (uint32_t i = 0; i < num_sem_1; i++) {
         semaphore_1[i] = get_semaphore(get_arg_val<uint32_t>(14 + 2 * algo_steps + num_sem_0 + i));
         semaphore_1_ptr[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_1[i]);
     }
@@ -115,14 +116,14 @@ void kernel_main() {
 
             // DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL();
 
-            for (int n_block = 0; n_block < 64; n_block++) {
+            for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                 if (send_block) {
                     uint32_t offset = tile_block_size * n_block;
                     dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv + offset);
-                    int tiles_to_send = 0;
+                    uint32_t tiles_to_send = 0;
                     // DPRINT << "Sending from: " << n_block << ENDL();
-                    while (send_block && n_block < 64) {
+                    while (send_block && n_block < total_nodes) {
                         tiles_to_send++;
                         n_block++;
                         send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
@@ -165,7 +166,7 @@ void kernel_main() {
         // noc_async_write(l1_write_addr_local, dst0_noc_addr, ublock_size_bytes_data * num_tiles);
         noc_async_write_barrier();
     }
-    int num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
+    uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
     //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]<<ENDL();

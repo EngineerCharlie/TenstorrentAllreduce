@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = SWING_ALGO_STEPS;
     dataflow_args[12] = NUM_TILES;
-    dataflow_args[13] = TOTAL_NODES / NUM_TILES;  // tiles per node
+    dataflow_args[13] = NUM_TILES / TOTAL_NODES;  // tiles per node
     for (int i = 0; i < 8; i++) {
         dataflow_args[14 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> compute_args(5 + 2 * SWING_ALGO_STEPS);
     compute_args[0] = SWING_ALGO_STEPS;
     compute_args[4] = NUM_TILES;
-    compute_args[5] = TOTAL_NODES / NUM_TILES;  // tiles per node
+    compute_args[5] = NUM_TILES / TOTAL_NODES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel;
