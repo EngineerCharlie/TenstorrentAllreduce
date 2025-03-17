@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "dataflow_api.h"
 #include "debug/dprint.h"
+#include "third_party/tracy/public/tracy/Tracy.hpp"
 
 void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
@@ -94,43 +95,46 @@ void kernel_main() {
     bool direction_SE;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t i = 0; i < algo_steps; i++) {
-        direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
-        if (this_core_SE == direction_SE) {
-            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
-            dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
-            dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
+    {
+        DeviceZoneScopedN("ALL_RED_LOOP");
+        for (uint32_t i = 0; i < algo_steps; i++) {
+            direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
+            if (this_core_SE == direction_SE) {
+                dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
+                dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
+                dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
 
-            // await sem from compute then reserve cb
-            cb_wait_front(cb_id_this, 1);
-            cb_wait_front(cb_id_local, num_tiles);
-            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096 post compute: " <<
-            // recv_array[4095]
-            //        << ENDL();
-            cb_pop_front(cb_id_this, 1);
+                // await sem from compute then reserve cb
+                cb_wait_front(cb_id_this, 1);
+                cb_wait_front(cb_id_local, num_tiles);
+                // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096 post compute: " <<
+                // recv_array[4095]
+                //        << ENDL();
+                cb_pop_front(cb_id_this, 1);
 
-            // await first sem from comm partner
-            noc_semaphore_inc(dst_noc_semaphore_0, 1);
-            noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
-            noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
+                // await first sem from comm partner
+                noc_semaphore_inc(dst_noc_semaphore_0, 1);
+                noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
+                noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
 
-            // write local array to com partner
-            noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * num_tiles);
-            noc_async_write_barrier();
-            cb_pop_front(cb_id_local, num_tiles);
+                // write local array to com partner
+                noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * num_tiles);
+                noc_async_write_barrier();
+                cb_pop_front(cb_id_local, num_tiles);
 
-            // await second sem from comm partner
-            noc_semaphore_inc(dst_noc_semaphore_1, 1);
-            noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
-            noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
-            // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096: " <<
-            // recv_array[4096]<<ENDL();
-            cb_reserve_back(cb_id_recv, num_tiles);
-            cb_push_back(cb_id_recv, num_tiles);
+                // await second sem from comm partner
+                noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
+                noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
+                // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096: " <<
+                // recv_array[4096]<<ENDL();
+                cb_reserve_back(cb_id_recv, num_tiles);
+                cb_push_back(cb_id_recv, num_tiles);
+            }
         }
+        cb_wait_front(cb_id_this, 1);
+        cb_pop_front(cb_id_this, 1);
     }
-    cb_wait_front(cb_id_this, 1);
-    cb_pop_front(cb_id_this, 1);
     if (this_core_SE == direction_SE) {
         noc_async_write(l1_write_addr_local, dst0_noc_addr, ublock_size_bytes_data * num_tiles);
         noc_async_write_barrier();

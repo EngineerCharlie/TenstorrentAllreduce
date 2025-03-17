@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>  // For std::log2
 #include <cstdint>
+#include "hostdevcommon/profiler_common.h"
 
 using namespace tt;
 using namespace tt::tt_metal;
@@ -187,7 +188,7 @@ int main(int argc, char** argv) {
     }
 
     /*Compute kernel arg initialization*/
-    std::vector<uint32_t> compute_args(5 + 2 * SWING_ALGO_STEPS);
+    std::vector<uint32_t> compute_args(6 + 2 * SWING_ALGO_STEPS);
     compute_args[0] = SWING_ALGO_STEPS;
     compute_args[4] = NUM_TILES;
     compute_args[5] = NUM_TILES / TOTAL_NODES;  // tiles per node
@@ -280,15 +281,15 @@ int main(int argc, char** argv) {
                     message_pass_depth,
                     dummy_step_directions);
 
-                printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                printf(
-                    "    Sending blocks: [%s %s]\n",
-                    uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                    uint32_to_binary_string(blocks_to_send[0]).c_str());
-                printf(
-                    "  Receiving blocks: [%s %s]\n",
-                    uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                    uint32_to_binary_string(blocks_to_recv[0]).c_str());
+                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
+                // printf(
+                //     "    Sending blocks: [%s %s]\n",
+                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
+                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
+                // printf(
+                //     "  Receiving blocks: [%s %s]\n",
+                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
+                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
         } else {
             /*Swing communication partner calculations*/
@@ -322,15 +323,15 @@ int main(int argc, char** argv) {
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
 
-                printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                printf(
-                    "    Sending blocks: [%s %s]\n",
-                    uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                    uint32_to_binary_string(blocks_to_send[0]).c_str());
-                printf(
-                    "  Receiving blocks: [%s %s]\n",
-                    uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                    uint32_to_binary_string(blocks_to_recv[0]).c_str());
+                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
+                // printf(
+                //     "    Sending blocks: [%s %s]\n",
+                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
+                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
+                // printf(
+                //     "  Receiving blocks: [%s %s]\n",
+                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
+                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
         }
@@ -374,6 +375,7 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
+        DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);

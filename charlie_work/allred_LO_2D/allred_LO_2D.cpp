@@ -271,6 +271,7 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
+        DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);

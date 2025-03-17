@@ -22,13 +22,12 @@ void MAIN {
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
 
-
     uint64_t block_indexes[algo_steps];
-    
-    for (uint32_t i = 0; i < algo_steps; i++) { 
+
+    for (uint32_t i = 0; i < algo_steps; i++) {
         uint64_t low_bits = get_arg_val<uint32_t>(6 + 2 * i);
         uint64_t high_bits = get_arg_val<uint32_t>(7 + 2 * i);
-        block_indexes[i] = (high_bits << 32) | low_bits; 
+        block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
     cb_wait_front(cb_id_local, num_tiles);
@@ -38,7 +37,7 @@ void MAIN {
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
-    
+
     for (uint32_t i = 0; i < algo_steps; i++) {
         // Signal appropriate NOC core to exchange data with other core
         SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -54,34 +53,44 @@ void MAIN {
         cb_wait_front(cb_id_recv, num_tiles);
 
         // add vectors
-        for (uint32_t tile_num = 0; tile_num < num_tiles; tile_num++) {
-            recv_block = (block_indexes[i] >> tile_num) & 1;  // Extract bit i
-            // if (recv_block) {
+        /* crappy solution - adds every tile up to the last which needs adding */
+        uint32_t reg_index = 0;
+        uint32_t last_index = 0;
+        for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
+            
+            recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+            if (recv_block) {
+                last_index = n_block;
+            }
+        }
+        for (uint32_t tile_num =0; tile_num < (last_index+1) * num_tiles_per_node;
+            tile_num++) {
+            // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
             tile_regs_acquire();
             // TODO: Do 8 tile registers at once
-            add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+            add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, reg_index % 8);
             tile_regs_commit();
 
             tile_regs_wait();
-            pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+            pack_tile(reg_index % 8, cb_id_local, tile_num);  // i must be lower than 8
             // TODO: Do 8 tile registers at once
             tile_regs_release();
-            // }
+
+            reg_index++;
         }
         // DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
         // for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
         //     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
         //     if (recv_block) {
-        //         for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node; tile_num++) {
+        //         for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
+        //              tile_num++) {
         //             DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
         //             tile_regs_acquire();
-        //             // TODO: Do 8 tile registers at once
         //             add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
         //             tile_regs_commit();
 
         //             tile_regs_wait();
         //             pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
-        //             // TODO: Do 8 tile registers at once
         //             tile_regs_release();
         //         }
         //     }
