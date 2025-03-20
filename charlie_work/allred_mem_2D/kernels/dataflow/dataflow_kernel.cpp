@@ -124,38 +124,46 @@ void kernel_main() {
         algo_steps, this_core_SE, num_sem_0, semaphore_0, semaphore_0_ptr, semaphore_1_ptr, dst_core_x, dst_core_y);
     // DPRINT << " Nodes sunc on core " << this_core_i << ENDL();
 
-    {
-        uint32_t write_offset = total_vector_size * this_core_i;
-        uint64_t common_noc_addr = get_noc_addr(common_dram_noc_x, common_dram_noc_y, common_addr + write_offset);
-        noc_async_write(l1_write_addr_local, common_noc_addr, total_vector_size);
-        noc_async_write_barrier();
-        sync_nodes(
-            algo_steps, this_core_SE, num_sem_0, semaphore_0, semaphore_0_ptr, semaphore_1_ptr, dst_core_x, dst_core_y);
-        uint32_t i_start, i_end;
-        if (this_core_SE) {
-            i_start = 0;
-            i_end = total_nodes / 2;
-        } else {
-            i_start = total_nodes / 2;
-            i_end = total_nodes;
-        }
-        for (uint32_t i = i_start; i < i_end; i++) {
-            uint32_t read_offset = 0;
-            // total_vector_size* i + this_core_i* tile_block_size;
-            common_noc_addr = get_noc_addr(common_dram_noc_x, common_dram_noc_y, common_addr + read_offset);
-            noc_async_read(common_noc_addr, l1_write_addr_recv + i * tile_block_size, tile_block_size);
-        }
-        noc_async_read_barrier();
-        cb_push_back(cb_id_recv, num_tiles / 2);
+    for (uint32_t j = 0; j < 1; j++) {
+        DeviceZoneScopedN("ALL_RED_LOOP");
+        {
+            uint32_t write_offset = total_vector_size * this_core_i;
+            uint64_t common_noc_addr = get_noc_addr(common_dram_noc_x, common_dram_noc_y, common_addr + write_offset);
+            noc_async_write(l1_write_addr_local, common_noc_addr, total_vector_size);
+            noc_async_write_barrier();
+            sync_nodes(
+                algo_steps, this_core_SE, num_sem_0, semaphore_0, semaphore_0_ptr, semaphore_1_ptr, dst_core_x, dst_core_y);
+            uint32_t i_start, i_end;
+            if (this_core_SE) {
+                i_start = 0;
+                i_end = total_nodes / 2;
+            } else {
+                i_start = total_nodes / 2;
+                i_end = total_nodes;
+            }
+            for (uint32_t i = i_start; i < i_end; i++) {
+                uint32_t read_offset = 0;
+                // total_vector_size* i + this_core_i* tile_block_size;
+                // if(this_core_SE) 
+                //     cb_reserve_back(cb_id_recv, num_tiles_per_node);
+                common_noc_addr = get_noc_addr(common_dram_noc_x, common_dram_noc_y, common_addr + read_offset);
+                noc_async_read(common_noc_addr, l1_write_addr_recv + i * tile_block_size, tile_block_size);
+                noc_async_read_barrier();
+                // if(this_core_SE) 
+                //     cb_push_back(cb_id_recv, num_tiles_per_node);
+            }
+            // if(!this_core_SE) 
+                cb_push_back(cb_id_recv, num_tiles / 2);
 
-        cb_wait_front(cb_id_this, 1);
-        cb_pop_front(cb_id_this, 1);
+            cb_wait_front(cb_id_this, 1);
+            cb_pop_front(cb_id_this, 1);
+        }
     }
     uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
 
-    for (uint32_t i = 0; i < 1000; i++) {
-        DPRINT << "NOC sum: " << local_array[i] <<ENDL();
-    }
+    // for (uint32_t i = 0; i < 1000; i++) {
+    //     DPRINT << "NOC sum: " << local_array[i] <<ENDL();
+    // }
     if (this_core_SE) {
         uint32_t offset = tile_block_size * this_core_i;
         // DPRINT << " Num tiles: " << num_tiles << " Num tiles/node: " << num_tiles_per_node << " this_core_i "
@@ -186,6 +194,10 @@ void sync_nodes(
 
     if (!this_core_SE) {
         // NW core to sync with all other NW cores via swing algo
+        // NW core syncs with SE core
+        noc_semaphore_set(semaphore_1_ptr[0], 1);
+        noc_semaphore_wait(semaphore_1_ptr[1], 1);
+        noc_semaphore_set(semaphore_1_ptr[1], 0);
         for (uint32_t i = 0; i < algo_steps; i++) {
             // DPRINT << " step " << dst_core_x[i]<< dst_core_y[i]<< ENDL();
             dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
@@ -193,10 +205,6 @@ void sync_nodes(
             noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
             noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
         }
-        // NW core syncs with SE core
-        noc_semaphore_set(semaphore_1_ptr[0], 1);
-        noc_semaphore_wait(semaphore_1_ptr[1], 1);
-        noc_semaphore_set(semaphore_1_ptr[1], 0);
     } else {
         // SE core syncs with NW core
         noc_semaphore_set(semaphore_1_ptr[1], 1);

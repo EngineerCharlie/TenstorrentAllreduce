@@ -26,38 +26,40 @@ void MAIN {
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE;
-    for (uint32_t i = 0; i < algo_steps; i++) {
-        // Signal appropriate NOC core to exchange data with other core
-        SE = (packed_bools >> i) & 1;  // Extract bit i
+    for (uint32_t j = 0; j < 30; j++) {
+        for (uint32_t i = 0; i < algo_steps; i++) {
+            // Signal appropriate NOC core to exchange data with other core
+            SE = (packed_bools >> i) & 1;  // Extract bit i
 
-        if (SE) {
-            cb_push_back(cb_id_SE, 1);
-        } else {
-            cb_push_back(cb_id_NW, 1);
+            if (SE) {
+                cb_push_back(cb_id_SE, 1);
+            } else {
+                cb_push_back(cb_id_NW, 1);
+            }
+
+            // Await signal from NOC that data is on local memory
+            cb_reserve_back(cb_id_local, num_tiles);
+            cb_wait_front(cb_id_recv, num_tiles);
+
+            // add vectors
+            for (uint32_t tile_num = 0; tile_num < num_tiles; tile_num++) {
+                tile_regs_acquire();
+                // TODO: Do 8 tile registers at once
+                add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                tile_regs_commit();
+
+                tile_regs_wait();
+                pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                // TODO: Do 8 tile registers at once
+                tile_regs_release();
+            }
+
+            cb_push_back(cb_id_local, num_tiles);
+            cb_pop_front(cb_id_recv, num_tiles);
         }
-
-        // Await signal from NOC that data is on local memory
-        cb_reserve_back(cb_id_local, num_tiles);
-        cb_wait_front(cb_id_recv, num_tiles);
-
-        // add vectors
-        for (uint32_t tile_num = 0; tile_num < num_tiles; tile_num++) {
-            tile_regs_acquire();
-            // TODO: Do 8 tile registers at once
-            add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
-            tile_regs_commit();
-
-            tile_regs_wait();
-            pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
-            // TODO: Do 8 tile registers at once
-            tile_regs_release();
-        }
-
-        cb_push_back(cb_id_local, num_tiles);
-        cb_pop_front(cb_id_recv, num_tiles);
+        cb_push_back(cb_id_SE, 1);
+        cb_push_back(cb_id_NW, 1);
     }
-    cb_push_back(cb_id_SE, 1);
-    cb_push_back(cb_id_NW, 1);
     // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
 }
 }  // namespace NAMESPACE

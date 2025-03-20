@@ -45,6 +45,7 @@ void MAIN {
             tile_regs_acquire();
             add_tiles(cb_id_local, cb_id_recv, offset, n_tile, n_tile % 8);
             tile_regs_commit();
+            
             tile_regs_wait();
             pack_tile(n_tile % 8, cb_id_local, offset);
             tile_regs_release();

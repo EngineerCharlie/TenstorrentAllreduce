@@ -95,7 +95,7 @@ void kernel_main() {
     bool direction_SE;
 
     // Signal appropriate NOC core to exchange data with other core
-    {
+    for (uint32_t j = 0; j < 30; j++) {
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
