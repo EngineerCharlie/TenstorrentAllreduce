@@ -37,70 +37,72 @@ void MAIN {
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
+    for (uint32_t j = 0; j < 30; j++) {
+        for (uint32_t i = 0; i < algo_steps; i++) {
+            // Signal appropriate NOC core to exchange data with other core
+            SE = (packed_bools >> i) & 1;  // Extract bit i
 
-    for (uint32_t i = 0; i < algo_steps; i++) {
-        // Signal appropriate NOC core to exchange data with other core
-        SE = (packed_bools >> i) & 1;  // Extract bit i
-
-        if (SE) {
-            cb_push_back(cb_id_SE, 1);
-        } else {
-            cb_push_back(cb_id_NW, 1);
-        }
-
-        // Await signal from NOC that data is on local memory
-        cb_reserve_back(cb_id_local, num_tiles);
-        cb_wait_front(cb_id_recv, num_tiles);
-
-        // add vectors
-        /* crappy solution - adds every tile up to the last which needs adding */
-        uint32_t reg_index = 0;
-        uint32_t last_index = 0;
-        for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-            
-            recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-            if (recv_block) {
-                last_index = n_block;
+            if (SE) {
+                cb_push_back(cb_id_SE, 1);
+            } else {
+                cb_push_back(cb_id_NW, 1);
             }
+
+            // Await signal from NOC that data is on local memory
+            cb_reserve_back(cb_id_local, num_tiles);
+            cb_wait_front(cb_id_recv, num_tiles);
+
+            // add vectors
+            /* crappy solution - adds every tile up to the last which needs adding */
+            // uint32_t reg_index = 0;
+            // uint32_t last_index = 0;
+            // for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
+
+            //     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+            //     if (recv_block) {
+            //         last_index = n_block;
+            //     }
+            // }
+            // for (uint32_t tile_num =0; tile_num < (last_index+1) * num_tiles_per_node;
+            //     tile_num++) {
+            //     // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
+            //     tile_regs_acquire();
+            //     // TODO: Do 8 tile registers at once
+            //     add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, reg_index % 8);
+            //     tile_regs_commit();
+
+            //     tile_regs_wait();
+            //     pack_tile(reg_index % 8, cb_id_local, tile_num);  // i must be lower than 8
+            //     // TODO: Do 8 tile registers at once
+            //     tile_regs_release();
+
+            //     reg_index++;
+            // }
+            DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
+            for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
+                recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+                if (recv_block) {
+                    for (uint32_t tile_num = n_block * num_tiles_per_node;
+                         tile_num < (n_block + 1) * num_tiles_per_node;
+                         tile_num++) {
+                        DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
+                        tile_regs_acquire();
+                        add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                        tile_regs_commit();
+
+                        tile_regs_wait();
+                        pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                        tile_regs_release();
+                    }
+                }
+            }
+
+            cb_push_back(cb_id_local, num_tiles);
+            cb_pop_front(cb_id_recv, num_tiles);
         }
-        for (uint32_t tile_num =0; tile_num < (last_index+1) * num_tiles_per_node;
-            tile_num++) {
-            // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
-            tile_regs_acquire();
-            // TODO: Do 8 tile registers at once
-            add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, reg_index % 8);
-            tile_regs_commit();
-
-            tile_regs_wait();
-            pack_tile(reg_index % 8, cb_id_local, tile_num);  // i must be lower than 8
-            // TODO: Do 8 tile registers at once
-            tile_regs_release();
-
-            reg_index++;
-        }
-        // DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
-        // for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-        //     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-        //     if (recv_block) {
-        //         for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
-        //              tile_num++) {
-        //             DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
-        //             tile_regs_acquire();
-        //             add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
-        //             tile_regs_commit();
-
-        //             tile_regs_wait();
-        //             pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
-        //             tile_regs_release();
-        //         }
-        //     }
-        // }
-
-        cb_push_back(cb_id_local, num_tiles);
-        cb_pop_front(cb_id_recv, num_tiles);
+        cb_push_back(cb_id_SE, 1);
+        cb_push_back(cb_id_NW, 1);
     }
-    cb_push_back(cb_id_SE, 1);
-    cb_push_back(cb_id_NW, 1);
     // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
 }
 }  // namespace NAMESPACE

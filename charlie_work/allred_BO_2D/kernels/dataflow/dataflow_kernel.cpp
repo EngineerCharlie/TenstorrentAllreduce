@@ -19,6 +19,16 @@ void kernel_main() {
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
     uint32_t num_tiles_per_node = get_arg_val<uint32_t>(13);
     uint32_t total_nodes = num_tiles / num_tiles_per_node;
+    uint32_t side_length;
+    if (total_nodes == 64) {
+        side_length = 8;
+    } else if (total_nodes == 16) {
+        side_length = 4;
+    } else if (total_nodes == 4) {
+        side_length = 2;
+    } else if (total_nodes == 1) {
+        side_length = 1;
+    }
 
     uint32_t this_core_x = get_arg_val<uint32_t>(7);
     uint32_t this_core_y = get_arg_val<uint32_t>(8);
@@ -70,6 +80,9 @@ void kernel_main() {
         block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
+    uint32_t all_core_x[8] = {1, 2, 3, 4, 6, 7, 8, 9};
+    uint32_t all_core_y[8] = {1, 2, 3, 4, 5, 7, 8, 9};
+
     // Read and setup semaphores
     const uint32_t num_sem_0 = 6;
     const uint32_t num_sem_1 = 8 - num_sem_0;
@@ -99,14 +112,13 @@ void kernel_main() {
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
-    {
+    for (uint32_t j = 0; j < 30; j++) {
+        // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " <<
+        // local_array[512]
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             if (this_core_SE == direction_SE) {
-                // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " <<
-                // local_array[512]
-                //    << " and step " << i << ENDL();
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
@@ -139,10 +151,6 @@ void kernel_main() {
                     }
                 }
 
-                // dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
-
-                // write local array to com partner
-                // noc_async_write(l1_write_addr_local, dst_noc_addr, ublock_size_bytes_data * num_tiles);
                 noc_async_write_barrier();
                 cb_pop_front(cb_id_local, num_tiles);
 
@@ -167,8 +175,6 @@ void kernel_main() {
         //        ENDL();
         uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
-        // uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr);
-        // noc_async_write(l1_write_addr_local, dst0_noc_addr, ublock_size_bytes_data * num_tiles);
         noc_async_write_barrier();
         uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
         // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " << local_array[512]

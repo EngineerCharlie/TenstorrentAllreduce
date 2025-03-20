@@ -132,17 +132,27 @@ int main(int argc, char** argv) {
         .page_size = single_tile_size * NUM_TILES,
         .buffer_type = tt_metal::BufferType::DRAM};
 
+    tt_metal::InterleavedBufferConfig common_dram_config{
+        .device = device,
+        .size = single_tile_size * NUM_TILES * TOTAL_NODES,
+        .page_size = single_tile_size * NUM_TILES * TOTAL_NODES,
+        .buffer_type = tt_metal::BufferType::DRAM};
+
     std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer = CreateBuffer(dram_config);
     std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer = CreateBuffer(dram_config);
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::Buffer> common_dram_buffer = CreateBuffer(common_dram_config);
 
     auto src_0_dram_noc_coord = src_0_dram_buffer->noc_coordinates();
     auto src_1_dram_noc_coord = src_1_dram_buffer->noc_coordinates();
+    auto common_dram_noc_coord = common_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
     uint32_t src_0_dram_noc_x = src_0_dram_noc_coord.x;
     uint32_t src_0_dram_noc_y = src_0_dram_noc_coord.y;
     uint32_t src_1_dram_noc_x = src_1_dram_noc_coord.x;
     uint32_t src_1_dram_noc_y = src_1_dram_noc_coord.y;
+    uint32_t common_dram_noc_x = common_dram_noc_coord.x;
+    uint32_t common_dram_noc_y = common_dram_noc_coord.y;
     uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
@@ -163,35 +173,39 @@ int main(int argc, char** argv) {
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(14 + 2 * SWING_ALGO_STEPS + 8 + 2 * SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(17 + 2 * SWING_ALGO_STEPS + 8 + 2 * SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
-    6: num steps
-    7-8: core x, y
-    9: core i (x+ y*side length)
-    10: is_SE
-    11: step_directions
-    12: num_tiles
-    13: tiles_per_node
-    14-25: core x, y for each step
-    26-33: semaphores for each step
-    34-45: block indexes to send at each step
+    6-8: common dram
+    9: num steps
+    10-11: core x, y
+    12: core i (x+ y*side length)
+    13: is_SE
+    14: step_directions
+    15: num_tiles
+    16: tiles_per_node
+    17-28: core x, y for each step
+    29-36: semaphores for each step
+    37-48: block indexes to send at each step
     */
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[4] = dst_dram_noc_x;
     dataflow_args[5] = dst_dram_noc_y;
-    dataflow_args[6] = SWING_ALGO_STEPS;
-    dataflow_args[12] = NUM_TILES;
-    dataflow_args[13] = NUM_TILES / TOTAL_NODES;  // tiles per node
+    dataflow_args[6] = common_dram_buffer->address();
+    dataflow_args[7] = common_dram_noc_x;
+    dataflow_args[8] = common_dram_noc_y;
+    dataflow_args[9] = SWING_ALGO_STEPS;
+    dataflow_args[15] = NUM_TILES;
+    dataflow_args[16] = NUM_TILES / TOTAL_NODES;  // tiles per node
     for (int i = 0; i < 8; i++) {
-        dataflow_args[14 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+        dataflow_args[17 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
     /*Compute kernel arg initialization*/
-    std::vector<uint32_t> compute_args(6 + 2 * SWING_ALGO_STEPS);
+    std::vector<uint32_t> compute_args(7 + 2 * SWING_ALGO_STEPS);
     compute_args[0] = SWING_ALGO_STEPS;
-    compute_args[4] = NUM_TILES;
-    compute_args[5] = NUM_TILES / TOTAL_NODES;  // tiles per node
+    compute_args[5] = NUM_TILES;
+    compute_args[6] = NUM_TILES / TOTAL_NODES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel;
@@ -208,11 +222,12 @@ int main(int argc, char** argv) {
     /*create kernels for each core*/
     for (int core_i = 0; core_i < core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(core_array[core_i]);
-        dataflow_args[7] = (uint32_t)physical_core.x;
-        dataflow_args[8] = (uint32_t)physical_core.y;
-        dataflow_args[9] = (uint32_t)core_i;  // Added core_i
+        dataflow_args[10] = (uint32_t)physical_core.x;
+        dataflow_args[11] = (uint32_t)physical_core.y;
+        dataflow_args[12] = (uint32_t)core_i;  // Added core_i
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
+        compute_args[3] = (uint32_t)core_i;
         if (core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = src_1_dram_buffer->address();
             dataflow_args[2] = src_1_dram_noc_x;
@@ -225,10 +240,10 @@ int main(int argc, char** argv) {
 
         /* set block indexes to 0 */
         for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
-            dataflow_args[22 + 2 * SWING_ALGO_STEPS + i] = 0;
+            dataflow_args[25 + 2 * SWING_ALGO_STEPS + i] = 0;
         }
         for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
-            compute_args[6 + i] = 0;
+            compute_args[7 + i] = 0;
         }
 
         horizontal_step = true;  // Start calcs on hrz step
@@ -241,17 +256,17 @@ int main(int argc, char** argv) {
 
                 logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
-                dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
+                dataflow_args[17 + 2 * algo_step] = (uint32_t)physical_core.x;
+                dataflow_args[18 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
+                uint32_t* blocks_to_recv = &compute_args[7 + 2 * algo_step];
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -280,16 +295,6 @@ int main(int argc, char** argv) {
                     TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
-
-                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                // printf(
-                //     "    Sending blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
-                // printf(z
-                //     "  Receiving blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
         } else {
             /*Swing communication partner calculations*/
@@ -299,17 +304,17 @@ int main(int argc, char** argv) {
 
                 logical_core = core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
-                dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
-                dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
+                dataflow_args[17 + 2 * algo_step] = (uint32_t)physical_core.x;
+                dataflow_args[18 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
+                uint32_t* blocks_to_recv = &compute_args[7 + 2 * algo_step];
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -322,38 +327,28 @@ int main(int argc, char** argv) {
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-
-                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                // printf(
-                //     "    Sending blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
-                // printf(
-                //     "  Receiving blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
         }
 
-        dataflow_args[11] = step_directions;
-        compute_args[3] = step_directions;
+        dataflow_args[14] = step_directions;
+        compute_args[4] = step_directions;
 
         /*SE Kernel*/
-        dataflow_args[10] = (uint32_t)true;
+        dataflow_args[13] = (uint32_t)true;
         dataflow_1_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_mem_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
         SetRuntimeArgs(program, dataflow_1_kernel, core_array[core_i], dataflow_args);
 
         /*NW Kernel*/
-        dataflow_args[10] = (uint32_t)false;
+        dataflow_args[13] = (uint32_t)false;
         dataflow_0_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_mem_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
@@ -362,7 +357,7 @@ int main(int argc, char** argv) {
         /* compute kernel */
         compute_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/compute/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_mem_2D/kernels/compute/"
             "compute_kernel.cpp",
             core_array[core_i],
             ComputeConfig{

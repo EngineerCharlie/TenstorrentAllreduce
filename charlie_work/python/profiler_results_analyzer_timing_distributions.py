@@ -22,36 +22,24 @@ def analyze_execution_cycles(csv_file):
         execution_cycles[key][phase][processor] = latest_entry[' time[cycles since reset]']
     
     # Calculate execution times and store with core information
-    execution_times = []
-    core_times = []  # List to store tuples of (execution_time, core_x, core_y)
+    core_times = []  # List to store tuples of (execution_time, start_time, core_x, core_y)
     for (core_x, core_y), phases in execution_cycles.items():
         if 'begin' in phases and 'end' in phases:
             latest_begin = max(phases['begin'].values())
             latest_end = max(phases['end'].values())
             exec_time = latest_end - latest_begin
-            execution_times.append(exec_time)
-            core_times.append((exec_time, core_x, core_y))
+            core_times.append((exec_time, latest_begin, core_x, core_y))
     
-    # Compute statistics
-    execution_times = np.array(execution_times)
-    min_time = np.min(execution_times)
-    lower_quartile = np.percentile(execution_times, 25)
-    mean = np.mean(execution_times)
-    median = np.median(execution_times)
-    upper_quartile = np.percentile(execution_times, 75)
-    max_time = np.max(execution_times)
+    # Sort by y coordinate, then x coordinate
+    core_times.sort(key=lambda x: (x[3], x[2]))
     
-    # Find cores with min and max times
-    min_core = next(ct for ct in core_times if ct[0] == min_time)
-    max_core = next(ct for ct in core_times if ct[0] == max_time)
+    # Find earliest start time
+    earliest_start = min(start_time for _, start_time, _, _ in core_times)
     
-    # Print results
-    print(f"Min: {min_time} (Core {min_core[1]},{min_core[2]})")
-    print(f"Lower Quartile: {lower_quartile}")
-    print(f"Mean: {mean}")
-    print(f"Median: {median}")
-    print(f"Upper Quartile: {upper_quartile}")
-    print(f"Max: {max_time} (Core {max_core[1]},{max_core[2]})")
+    # Print results for each core with normalized start times
+    for exec_time, start_time, x, y in core_times:
+        normalized_start = start_time - earliest_start
+        print(f"Core ({x},{y}): normalized_start={normalized_start}, execution_time={exec_time} cycles")
 
 # Example usage
 csv_file = '/home/tenstorrent/tt-metal/generated/profiler/.logs/profile_log_device.csv'
