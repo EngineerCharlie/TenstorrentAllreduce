@@ -13,7 +13,7 @@ data_sizes_LO = [1,2,4,8,16,32,64,128,192,256,320]  # Fill in desired data sizes
 data_sizes_BO_mem = [1,2,3,4,5]  # Fill in desired data sizes
 output_csv = "generated/allred_results/profiler_results.csv"
 range_x = [1,2,3,4,6,7,8,9]
-range_y = p = [1,2,3,4,5,7,8,9]
+range_y = [1,2,3,4,5,7,8,9]
 # CSV Header
 csv_header = ["mode", "swing_algo", "data_size"] + [f"{x}{y}_start" for y in range_y for x in range_x] + [f"{x}{y}_end" for y in range_y for x in range_x]
 

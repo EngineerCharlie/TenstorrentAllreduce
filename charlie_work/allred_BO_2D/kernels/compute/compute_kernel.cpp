@@ -85,7 +85,7 @@ void MAIN {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
-                        DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
+                        // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
                         add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                         tile_regs_commit();

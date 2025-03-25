@@ -43,11 +43,11 @@ void MAIN {
         cb_wait_front(cb_id_recv, num_tiles);
         for (uint32_t n_tile = 0; n_tile < num_tiles; n_tile++) {
             tile_regs_acquire();
-            add_tiles(cb_id_local, cb_id_recv, offset, n_tile, n_tile % 8);
+            add_tiles(cb_id_local, cb_id_recv, offset + n_tile % num_tiles_per_node, n_tile, n_tile % 8);
             tile_regs_commit();
             
             tile_regs_wait();
-            pack_tile(n_tile % 8, cb_id_local, offset);
+            pack_tile(n_tile % 8, cb_id_local, offset+ n_tile % num_tiles_per_node);
             tile_regs_release();
         }
         cb_pop_front(cb_id_recv, num_tiles);

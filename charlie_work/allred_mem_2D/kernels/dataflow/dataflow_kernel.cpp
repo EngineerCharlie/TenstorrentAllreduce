@@ -160,9 +160,19 @@ void kernel_main() {
         }
     }
     uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
-
+    // bool found_not_2 = false;
+    // for (uint32_t i = 0; i < num_els; i++) {
+    //     if (local_array[i] != 1073758208 || local_array[i] != 1077952576) {
+    //         DPRINT << "NOC sum: " << local_array[i] << ENDL();
+    //         found_not_2 = true;
+    //     }
+    // }
+    // if (!found_not_2) {
+    //     DPRINT << "NOC sum: " << local_array[0] << ENDL();
+    // }
     // for (uint32_t i = 0; i < 1000; i++) {
-    //     DPRINT << "NOC sum: " << local_array[i] <<ENDL();
+    //     if (local_array[i] != 1073758208)
+    //         DPRINT << "NOC sum: " << local_array[i] <<ENDL();
     // }
     if (this_core_SE) {
         uint32_t offset = tile_block_size * this_core_i;
@@ -189,22 +199,19 @@ void sync_nodes(
     volatile tt_l1_ptr uint32_t** semaphore_1_ptr,
     uint32_t* dst_core_x,
     uint32_t* dst_core_y) {
-    uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
-    bool direction_SE, send_block;
-
     if (!this_core_SE) {
         // NW core to sync with all other NW cores via swing algo
-        // NW core syncs with SE core
-        noc_semaphore_set(semaphore_1_ptr[0], 1);
-        noc_semaphore_wait(semaphore_1_ptr[1], 1);
-        noc_semaphore_set(semaphore_1_ptr[1], 0);
         for (uint32_t i = 0; i < algo_steps; i++) {
             // DPRINT << " step " << dst_core_x[i]<< dst_core_y[i]<< ENDL();
-            dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
+            uint64_t dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
             noc_semaphore_inc(dst_noc_semaphore_0, 1);
             noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
             noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
         }
+        // NW core syncs with SE core
+        noc_semaphore_set(semaphore_1_ptr[0], 1);
+        noc_semaphore_wait(semaphore_1_ptr[1], 1);
+        noc_semaphore_set(semaphore_1_ptr[1], 0);
     } else {
         // SE core syncs with NW core
         noc_semaphore_set(semaphore_1_ptr[1], 1);
