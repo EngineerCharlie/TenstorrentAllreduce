@@ -112,7 +112,7 @@ void kernel_main() {
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t j = 0; j < 30; j++) {
+    for (uint32_t j = 0; j < 1; j++) {
         // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " <<
         // local_array[512]
         DeviceZoneScopedN("ALL_RED_LOOP");

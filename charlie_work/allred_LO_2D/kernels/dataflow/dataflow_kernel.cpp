@@ -95,7 +95,7 @@ void kernel_main() {
     bool direction_SE;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t j = 0; j < 30; j++) {
+    for (uint32_t j = 0; j < 1; j++) {
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
@@ -107,9 +107,8 @@ void kernel_main() {
                 // await sem from compute then reserve cb
                 cb_wait_front(cb_id_this, 1);
                 cb_wait_front(cb_id_local, num_tiles);
-                // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096 post compute: " <<
-                // recv_array[4095]
-                //        << ENDL();
+                // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE
+                //        << " arr4096 post compute: " << recv_array[4095] << ENDL();
                 cb_pop_front(cb_id_this, 1);
 
                 // await first sem from comm partner
@@ -127,7 +126,8 @@ void kernel_main() {
                 noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
                 noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
                 // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr4096: " <<
-                // recv_array[4096]<<ENDL();
+                // recv_array[4096]
+                //        << ENDL();
                 cb_reserve_back(cb_id_recv, num_tiles);
                 cb_push_back(cb_id_recv, num_tiles);
             }
