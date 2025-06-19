@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
-#include "compute_kernel_api/eltwise_unary/eltwise_unary.h"
 #include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/tile_move_copy.h"
 #include "debug/dprint.h"  // required in all kernels using DPRINT
@@ -33,12 +32,8 @@ void MAIN {
 
     cb_wait_front(cb_id_local, num_tiles);
 
-    // Pre-initialize operations
-    // init_sfpu(cb_id_recv, cb_id_local); //seems unneeded?
-    // tile_regs_acquire(); //tiles not required?
-    copy_tile_to_dst_init_short(cb_id_local);
-    binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_recv);
-    // tile_regs_release(); //tiles not required?
+    binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
+    add_tiles_init();
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
@@ -54,36 +49,34 @@ void MAIN {
             }
 
             // Await signal from NOC that data is on local memory
+            cb_reserve_back(cb_id_local, num_tiles);
             cb_wait_front(cb_id_recv, num_tiles);
-            cb_wait_front(cb_id_local, num_tiles);
 
             // add vectors
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                 if (recv_block) {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
-                         tile_num < (n_block + 1) * num_tiles_per_node;
-                         tile_num++) {
+                            tile_num < (n_block + 1) * num_tiles_per_node;
+                            tile_num++) {
                         // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
-                        // copy_tile(cb_id_local, tile_num, 0);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-                        //     cb_id_recv, tile_num, 0);
+                        add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                         tile_regs_commit();
 
                         tile_regs_wait();
-                        // pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                        pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
                         tile_regs_release();
                     }
                 }
             }
 
-            cb_pop_front(cb_id_local, num_tiles);
+            cb_push_back(cb_id_local, num_tiles);
             cb_pop_front(cb_id_recv, num_tiles);
         }
         cb_push_back(cb_id_SE, 1);
         cb_push_back(cb_id_NW, 1);
-        DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
     }
+    // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
 }
 }  // namespace NAMESPACE

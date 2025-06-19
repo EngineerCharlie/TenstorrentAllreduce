@@ -112,7 +112,7 @@ void kernel_main() {
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 2; j++) {
         DPRINT << " data starting " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
@@ -159,10 +159,11 @@ void kernel_main() {
                 cb_push_back(cb_id_local, num_tiles);
             }
         }
-        // DPRINT << " data waiting " << this_core_x << this_core_y << ENDL();
+        DPRINT << " data waiting " << this_core_x << this_core_y << ENDL();
+        // DPRINT << " data pre-wait "<< ENDL();
         cb_wait_front(cb_id_this, 1);
         cb_pop_front(cb_id_this, 1);
-        DPRINT << " data done " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
+    DPRINT << " data done " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
     }
     if (this_core_SE == direction_SE) {
         uint32_t offset = tile_block_size * this_core_i;

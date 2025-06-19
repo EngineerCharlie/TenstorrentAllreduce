@@ -375,6 +375,7 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
+        printf("prog finished \n");
         DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */

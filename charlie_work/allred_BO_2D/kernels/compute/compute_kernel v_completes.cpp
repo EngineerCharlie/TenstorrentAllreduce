@@ -42,7 +42,7 @@ void MAIN {
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 4; j++) {
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -66,13 +66,12 @@ void MAIN {
                          tile_num++) {
                         // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
-                        // copy_tile(cb_id_local, tile_num, 0);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-                        //     cb_id_recv, tile_num, 0);
+                        // add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                        copy_tile(cb_id_local, tile_num, 0);
                         tile_regs_commit();
 
                         tile_regs_wait();
-                        // pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                        pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
                         tile_regs_release();
                     }
                 }
