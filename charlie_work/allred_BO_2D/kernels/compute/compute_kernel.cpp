@@ -34,15 +34,16 @@ void MAIN {
     cb_wait_front(cb_id_local, num_tiles);
 
     // Pre-initialize operations
-    // init_sfpu(cb_id_recv, cb_id_local); //seems unneeded?
+    // init_sfpu(cb_id_recv, cb_id_local);  // seems unneeded?
     // tile_regs_acquire(); //tiles not required?
-    copy_tile_to_dst_init_short(cb_id_local);
-    binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_recv);
+    // copy_tile_to_dst_init_short(cb_id_local);
+    // binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCB>(cb_id_recv);
     // tile_regs_release(); //tiles not required?
 
-    cb_pop_front(cb_id_local, num_tiles);
+    // cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
     for (uint32_t j = 0; j < 1; j++) {
+        int tile_reg_num = 0;
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -52,38 +53,42 @@ void MAIN {
             } else {
                 cb_push_back(cb_id_NW, 1);
             }
-
             // Await signal from NOC that data is on local memory
             cb_wait_front(cb_id_recv, num_tiles);
-            cb_wait_front(cb_id_local, num_tiles);
 
-            // add vectors
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-                recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+                recv_block = (block_indexes[i] >> n_block) & 1;
                 if (recv_block) {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
-                        // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
-                        // copy_tile(cb_id_local, tile_num, 0);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-                        //     cb_id_recv, tile_num, 0);
-                        tile_regs_commit();
+                        
+                        // // Step 1: load tile from cb_id_local into DST
+                        copy_tile_to_dst_init_short(cb_id_local);
+                        copy_tile(cb_id_local, tile_num, tile_reg_num);  // Writes to DST[0]
+                        // // Step 2: perform recv + local (local in DST, recv in cb_id_recv)
+                        binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCB>(cb_id_recv);
+                        binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCB>(
+                            cb_id_recv, tile_num, tile_reg_num);  // result goes back to DST[0]
 
-                        tile_regs_wait();
-                        // pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                        tile_regs_commit();  // commit tile register updates
+
+                        tile_regs_wait();  // ensure math + data ready
+
+                        // Step 3: write back to cb_id_local from DST
+                        pack_tile(tile_reg_num, cb_id_local, tile_num);  // DST[0] → cb_id_local[tile_num]
                         tile_regs_release();
+                        tile_reg_num = (tile_reg_num + 1) % 8;
                     }
                 }
             }
-
-            cb_pop_front(cb_id_local, num_tiles);
             cb_pop_front(cb_id_recv, num_tiles);
         }
+        cb_pop_front(cb_id_local, num_tiles);  // Pop local after processing
         cb_push_back(cb_id_SE, 1);
         cb_push_back(cb_id_NW, 1);
-        DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
+        // DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
     }
 }
 }  // namespace NAMESPACE

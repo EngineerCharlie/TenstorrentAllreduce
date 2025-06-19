@@ -113,7 +113,7 @@ void kernel_main() {
 
     // Signal appropriate NOC core to exchange data with other core
     for (uint32_t j = 0; j < 1; j++) {
-        DPRINT << " data starting " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
+        // DPRINT << " data starting " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
@@ -140,6 +140,7 @@ void kernel_main() {
                         uint32_t tiles_to_send = 0;
                         // DPRINT << "Sending from: " << n_block << ENDL();
                         while (send_block && n_block < total_nodes) {
+                            // cb_push_back(cb_id_local, 1);
                             tiles_to_send++;
                             n_block++;
                             send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
@@ -156,15 +157,14 @@ void kernel_main() {
                 noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
                 noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
                 cb_push_back(cb_id_recv, num_tiles);
-                cb_push_back(cb_id_local, num_tiles);
             }
         }
         // DPRINT << " data waiting " << this_core_x << this_core_y << ENDL();
         cb_wait_front(cb_id_this, 1);
         cb_pop_front(cb_id_this, 1);
-        DPRINT << " data done " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
     }
     if (this_core_SE == direction_SE) {
+        DPRINT << " data writer " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
         uint32_t offset = tile_block_size * this_core_i;
         uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
