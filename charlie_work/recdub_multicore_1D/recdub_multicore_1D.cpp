@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
-#include "tt_metal/host_api.hpp"
+#include <tt-metalium/host_api.hpp>
 #include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/bfloat16.hpp"
 
@@ -37,7 +36,7 @@ int main(int argc, char** argv) {
     } else {
         start_row = 0;
         end_row = 1;
-    }    
+    }
     int RND_SRC = 0;
     if (argc >= 3) {
         RND_SRC = std::stoi(argv[2]);
@@ -145,7 +144,7 @@ int main(int argc, char** argv) {
         KernelHandle compute_kernel;
         CoreCoord logical_core;
         CoreCoord physical_core;
-        int recv_node,message_pass_depth;
+        int recv_node, message_pass_depth;
         bool sending_SE;
 
         bool start_direction_SE = true;
@@ -240,17 +239,17 @@ int main(int argc, char** argv) {
         // Convert the unpacked bfloat16 values back to float for printing
         float first_bfloat_value = two_bfloats.first.to_float();
         float second_bfloat_value = two_bfloats.second.to_float();
-        printf("          Result (nocast) = %d, and after casting %d\n", result_vec[0],(int)first_bfloat_value);  
+        printf("          Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)first_bfloat_value);
         two_bfloats = unpack_two_bfloat16_from_uint32(src_vec[0]);
 
         // Convert the unpacked bfloat16 values back to float for printing
         first_bfloat_value = two_bfloats.first.to_float();
         second_bfloat_value = two_bfloats.second.to_float();
-        first_bfloat_value = first_bfloat_value *8.0;
-        second_bfloat_value = second_bfloat_value *8.0;
-        uint32_t output = pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(
-            first_bfloat_value,second_bfloat_value));
-        printf("Expected result (nocast) = %d, and after casting %d\n",output,(int)first_bfloat_value);  
+        first_bfloat_value = first_bfloat_value * 8.0;
+        second_bfloat_value = second_bfloat_value * 8.0;
+        uint32_t output =
+            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(first_bfloat_value, second_bfloat_value));
+        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)first_bfloat_value);
         CloseDevice(device);
     }
 }

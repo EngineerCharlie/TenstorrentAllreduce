@@ -2,16 +2,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 // all reduce latnecy optimal 1D
-
-#include "tt_metal/host_api.hpp"
-#include "tt_metal/impl/device/device.hpp"
-#include "tt_metal/host_api.hpp"
-#include "tt_metal/common/constants.hpp"
-#include "tt_metal/detail/util.hpp"
-#include "tt_metal/common/bfloat16.hpp"
-#include "tt_metal/impl/dispatch/command_queue.hpp"
-#include "tt_metal/detail/tt_metal.hpp"
-#include "tt_metal/impl/device/device.hpp"
+#include <tt-metalium/host_api.hpp>
+#include <tt-metalium/device.hpp>
+#include <tt-metalium/bfloat16.hpp>
+// #include "tt_metal/common/constants.hpp"
+// #include "tt_metal/detail/util.hpp"
+// #include "tt_metal/impl/dispatch/command_queue.hpp"
+// #include "tt_metal/detail/tt_metal.hpp"
 #include <stdlib.h>
 #include <time.h>
 
@@ -40,7 +37,7 @@ int get_comm_partner(int node, int step, int num_nodes) {
 
 int main(int argc, char** argv) {
     int device_id = 0;
-    Device* device = CreateDevice(device_id);
+    IDevice* device = CreateDevice(device_id);
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
@@ -62,9 +59,9 @@ int main(int argc, char** argv) {
     InterleavedBufferConfig dram_config{
         .device = device, .size = single_tile_size, .page_size = single_tile_size, .buffer_type = BufferType::DRAM};
     std::shared_ptr<Buffer> src_dram_buffer = CreateBuffer(dram_config);
-    auto src_dram_noc_coord = src_dram_buffer->noc_coordinates();
-    uint32_t src_dram_noc_x = src_dram_noc_coord.x;
-    uint32_t src_dram_noc_y = src_dram_noc_coord.y;
+    auto src_dram_noc_coord = 0;  // src_dram_buffer->noc_coordinates();
+    uint32_t src_dram_noc_x = 0;  // src_dram_noc_coord.x;
+    uint32_t src_dram_noc_y = 0;  // src_dram_noc_coord.y;
     EnqueueWriteBuffer(cq, src_dram_buffer, input_array, false);
 
     // Populate the array using a loop

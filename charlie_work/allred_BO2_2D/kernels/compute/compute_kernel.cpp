@@ -34,7 +34,7 @@ void MAIN {
     cb_wait_front(cb_id_local, num_tiles);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
-    add_tiles_init();
+    add_tiles_init(cb_id_local, cb_id_recv, cb_id_local);
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;

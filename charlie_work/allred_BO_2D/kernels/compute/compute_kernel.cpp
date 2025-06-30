@@ -33,7 +33,7 @@ void MAIN {
     cb_wait_front(cb_id_local, num_tiles);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
-    add_tiles_init();
+    add_tiles_init(cb_id_local, cb_id_recv, true);
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE, recv_block;
@@ -53,15 +53,15 @@ void MAIN {
             cb_wait_front(cb_id_recv, num_tiles);
 
             // add vectors
-            /* crappy solution - adds every tile up to the last which needs adding */
-            uint32_t reg_index = 0;
-            uint32_t last_index = 0;
-            for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-                recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-                if (recv_block) {
-                    last_index = n_block;
-                }
-            }
+            // /* crappy solution - adds every tile up to the last which needs adding */
+            // uint32_t reg_index = 0;
+            // uint32_t last_index = 0;
+            // for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
+            //     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+            //     if (recv_block) {
+            //         last_index = n_block;
+            //     }
+            // }
             // /*Slow correct version*/
             // for (uint32_t tile_num = 0; tile_num < (last_index + 1) * num_tiles_per_node; tile_num++) {
             //     // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
@@ -77,7 +77,6 @@ void MAIN {
 
             //     reg_index++;
             // }
-            // DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
 
             /*Fast wrong version*/
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
@@ -91,7 +90,8 @@ void MAIN {
                         // binary_dest_reuse_tiles_init<
                         //     EltwiseBinaryType::ELWMUL,
                         //     EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_local);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWMUL, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
+                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWMUL,
+                        // EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
                         //     cb_id_recv, tile_num, tile_num % 8);
                         add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                         tile_regs_commit();

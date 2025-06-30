@@ -10,10 +10,10 @@
 void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
     uint32_t dst0_addr = get_arg_val<uint32_t>(1);
-    uint32_t src0_dram_noc_x = get_arg_val<uint32_t>(2);
-    uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
-    uint32_t dst0_dram_noc_x = get_arg_val<uint32_t>(4);
-    uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
+    uint32_t src0_bank_id = get_arg_val<uint32_t>(2);
+    // uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
+    uint32_t dst0_bank_id = get_arg_val<uint32_t>(4);
+    // uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
@@ -37,7 +37,7 @@ void kernel_main() {
     uint32_t packed_direction_bools = get_arg_val<uint32_t>(11);
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " started "<< ENDL();
 
-    uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
+    uint64_t src0_noc_addr = get_noc_addr_from_bank_id<true>(src0_bank_id, src0_addr);
 
     // setup circular buffers
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
@@ -173,11 +173,15 @@ void kernel_main() {
         // DPRINT << " base_addr: " << dst0_addr << " offset: " << offset
         //        << " final_addr: " << (dst0_addr + tile_block_size * this_core_i) <<
         //        ENDL();
-        uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr + offset);
+        uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
         uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
         // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " << local_array[512]
         //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
+        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[0]
+               << " and sum[last]" << local_array[num_els - 1] << ENDL();
+        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]
+               << ENDL();
     }
 }

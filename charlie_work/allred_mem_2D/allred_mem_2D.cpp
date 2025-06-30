@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
-#include "tt_metal/host_api.hpp"
-#include "tt_metal/impl/device/device.hpp"
-#include "tt_metal/common/bfloat16.hpp"
+#include <tt-metalium/host_api.hpp>
+#include <tt-metalium/device.hpp>
+#include <tt-metalium/bfloat16.hpp>
 #include <array>
 #include <cmath>  // For std::log2
 #include <cstdint>
@@ -30,7 +29,7 @@ std::string uint32_to_binary_string(uint32_t value) {
 
 int main(int argc, char** argv) {
     /* Silicon accelerator setup */
-    Device* device = CreateDevice(0);
+    IDevice* device = CreateDevice(0);
 
     /* Setup program to execute along with its buffers and kernels to use */
     CommandQueue& cq = device->command_queue();
@@ -143,18 +142,18 @@ int main(int argc, char** argv) {
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
     std::shared_ptr<tt::tt_metal::Buffer> common_dram_buffer = CreateBuffer(common_dram_config);
 
-    auto src_0_dram_noc_coord = src_0_dram_buffer->noc_coordinates();
-    auto src_1_dram_noc_coord = src_1_dram_buffer->noc_coordinates();
-    auto common_dram_noc_coord = common_dram_buffer->noc_coordinates();
-    auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_dram_noc_x = src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = src_0_dram_noc_coord.y;
-    uint32_t src_1_dram_noc_x = src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = src_1_dram_noc_coord.y;
-    uint32_t common_dram_noc_x = common_dram_noc_coord.x;
-    uint32_t common_dram_noc_y = common_dram_noc_coord.y;
-    uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
-    uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
+    auto src_0_dram_noc_coord = 0;   // src_0_dram_buffer->noc_coordinates();
+    auto src_1_dram_noc_coord = 0;   // src_1_dram_buffer->noc_coordinates();
+    auto common_dram_noc_coord = 0;  // common_dram_buffer->noc_coordinates();
+    auto dst_dram_noc_coord = 0;     // dst_dram_buffer->noc_coordinates();
+    uint32_t src_0_dram_noc_x = 0;   // src_0_dram_noc_coord.x;
+    uint32_t src_0_dram_noc_y = 0;   // src_0_dram_noc_coord.y;
+    uint32_t src_1_dram_noc_x = 0;   // src_1_dram_noc_coord.x;
+    uint32_t src_1_dram_noc_y = 0;   // src_1_dram_noc_coord.y;
+    uint32_t common_dram_noc_x = 0;  // common_dram_noc_coord.x;
+    uint32_t common_dram_noc_y = 0;  // common_dram_noc_coord.y;
+    uint32_t dst_dram_noc_x = 0;     // dst_dram_noc_coord.x;
+    uint32_t dst_dram_noc_y = 0;     // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
@@ -370,7 +369,7 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
-        DumpDeviceProfileResults(device, program);
+        // DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
