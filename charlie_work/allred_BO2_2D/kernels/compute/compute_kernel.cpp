@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/tile_move_copy.h"
+#include "compute_kernel_api/add_int_sfpu.h"
 #include "debug/dprint.h"  // required in all kernels using DPRINT
 
 namespace NAMESPACE {
@@ -53,33 +54,6 @@ void MAIN {
             cb_wait_front(cb_id_recv, num_tiles);
 
             // add vectors
-            /* crappy solution - adds every tile up to the last which needs adding */
-            uint32_t reg_index = 0;
-            uint32_t last_index = 0;
-            for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-                recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
-                if (recv_block) {
-                    last_index = n_block;
-                }
-            }
-            // /*Slow correct version*/
-            // for (uint32_t tile_num = 0; tile_num < (last_index + 1) * num_tiles_per_node; tile_num++) {
-            //     // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
-            //     tile_regs_acquire();
-            //     // TODO: Do 8 tile registers at once
-            //     add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, reg_index % 8);
-            //     tile_regs_commit();
-
-            //     tile_regs_wait();
-            //     pack_tile(reg_index % 8, cb_id_local, tile_num);  // i must be lower than 8
-            //     // TODO: Do 8 tile registers at once
-            //     tile_regs_release();
-
-            //     reg_index++;
-            // }
-            // DPRINT_MATH(DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL());
-
-            /*Fast wrong version*/
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                 if (recv_block) {
@@ -88,16 +62,23 @@ void MAIN {
                          tile_num++) {
                         // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
+                        copy_tile_init(cb_id_recv);
+                        copy_tile(cb_id_recv, tile_num, 1);
+                        copy_tile_init(cb_id_local);
+                        copy_tile(cb_id_local, tile_num, 0);
+                        add_int_tile_init();
+                        add_uint16_tile(0, 1);
                         // binary_dest_reuse_tiles_init<
                         //     EltwiseBinaryType::ELWMUL,
                         //     EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_local);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWMUL, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
+                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWMUL,
+                        // EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
                         //     cb_id_recv, tile_num, tile_num % 8);
-                        add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                        // add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                         tile_regs_commit();
 
                         tile_regs_wait();
-                        pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
+                        pack_tile(0, cb_id_local, tile_num);  // i must be lower than 8
                         tile_regs_release();
                     }
                 }

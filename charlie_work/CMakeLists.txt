@@ -2,6 +2,7 @@ set(PROGRAMMING_EXAMPLES_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/add_2_integers_in_compute2/add_2_integers_in_compute2.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/all_red_swing_1D/all_red_swing_1D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_BO_2D/allred_BO_2D.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/allred_BO2_2D/allred_BO2_2D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_LO_2D/allred_LO_2D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_mem_2D/allred_mem_2D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/circular_buffer_tile_addition/circular_buffer_tile_addition.cpp
