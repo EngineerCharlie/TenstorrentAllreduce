@@ -60,13 +60,12 @@ void kernel_main() {
     uint32_t ublock_size_bytes_semaphore = get_tile_size(cb_id_compute);
     uint32_t ublock_size_bytes_data = get_tile_size(cb_id_local);
     uint32_t tile_block_size = ublock_size_bytes_data * num_tiles_per_node;
-    uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
 
     uint32_t l1_write_addr_recv = get_write_ptr(cb_id_recv);
     uint32_t l1_write_addr_local = get_write_ptr(cb_id_local);
 
-    uint32_t* local_array = reinterpret_cast<uint32_t*>(l1_write_addr_local);
-    uint32_t* recv_array = reinterpret_cast<uint32_t*>(l1_write_addr_recv);
+    uint16_t* local_array = reinterpret_cast<uint16_t*>(l1_write_addr_local);
+    uint16_t* recv_array = reinterpret_cast<uint16_t*>(l1_write_addr_recv);
 
     // read in partner addresses and blocks to send indexes
     uint32_t dst_core_x[algo_steps];
@@ -107,8 +106,6 @@ void kernel_main() {
         noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data * num_tiles);
         noc_async_read_barrier();
         cb_push_back(cb_id_local, num_tiles);
-        // DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node*this_core_i+1]
-        //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
     }
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
@@ -171,16 +168,14 @@ void kernel_main() {
     }
     if (this_core_SE == direction_SE) {
         uint32_t offset = tile_block_size * this_core_i;
-        // DPRINT << " Num tiles: " << num_tiles << " Num tiles/node: " << num_tiles_per_node << " this_core_i "
-        //        << this_core_i << ENDL();
-        // DPRINT << " base_addr: " << dst0_addr << " offset: " << offset
-        //        << " final_addr: " << (dst0_addr + tile_block_size * this_core_i) <<
-        //        ENDL();
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
-        DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node*this_core_i+1]
+        uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint16_t);
+        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[0]: " << local_array[this_core_i*1024]
                << " and sum[last]" << local_array[num_els - 1] << ENDL();
+        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " recv[0]: " << recv_array[this_core_i*1024]
+               << " and sum[last]" << recv_array[num_els - 1] << ENDL();
         DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]
                << ENDL();
     }

@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
-#include "tt_metal/host_api.hpp"
-#include "tt_metal/impl/device/device.hpp"
-#include "tt_metal/host_api.hpp"
+#include <tt-metalium/host_api.hpp>
+#include "tt_metal/impl/device/device.hpp" #include < tt - metalium / host_api.hpp>
 #include "tt_metal/common/constants.hpp"
 #include "tt_metal/detail/util.hpp"
 #include "tt_metal/common/bfloat16.hpp"
@@ -39,11 +37,11 @@ int main(int argc, char** argv) {
 
     const uint32_t input_arr_size = 64;
     uint32_t input_array[input_arr_size];
-    for (int i = 0; i < input_arr_size; i++){
-     input_array[i] = (uint32_t)time_4dig_int() + i*100000;
+    for (int i = 0; i < input_arr_size; i++) {
+        input_array[i] = (uint32_t)time_4dig_int() + i * 100000;
     }
-    printf("Host's input number was %d\n",input_array[0]);
-    
+    printf("Host's input number was %d\n", input_array[0]);
+
     constexpr uint32_t single_tile_size = input_arr_size * sizeof(uint32_t);
     InterleavedBufferConfig dram_config{
         .device = device, .size = single_tile_size, .page_size = single_tile_size, .buffer_type = BufferType::DRAM};
@@ -94,7 +92,13 @@ int main(int argc, char** argv) {
         program,
         lead_kernel,
         core_array[0],
-        {(uint32_t)dst_core_coord.x, (uint32_t)dst_core_coord.y, receiver_semaphore_id, input_arr_size, src_dram_buffer->address(), src_dram_noc_x, src_dram_noc_y});
+        {(uint32_t)dst_core_coord.x,
+         (uint32_t)dst_core_coord.y,
+         receiver_semaphore_id,
+         input_arr_size,
+         src_dram_buffer->address(),
+         src_dram_noc_x,
+         src_dram_noc_y});
     for (int i = 1; i < core_array.size(); i++) {
         if ((i / 8) % 2 == 0) {  // Even row (left to right)
 

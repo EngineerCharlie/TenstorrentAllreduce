@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
-#include "tt_metal/host_api.hpp"
+#include <tt-metalium/host_api.hpp>
 #include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/bfloat16.hpp"
 #include <array>
@@ -69,7 +68,6 @@ int main(int argc, char** argv) {
         .page_size = single_tile_size * MIN_MEMORY_TILES,
         .buffer_type = tt_metal::BufferType::DRAM};
 
-    /*Setup dram to pass data to/from cores*/
     tt_metal::InterleavedBufferConfig dst_dram_config{
         .device = device,
         .size = single_tile_size,
@@ -80,7 +78,6 @@ int main(int argc, char** argv) {
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dst_dram_config);
 
     auto src_0_dram_noc_coord = src_dram_buffer->noc_coordinates();
-    auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
 
     uint32_t dram_noc_x = src_0_dram_noc_coord.x;
     uint32_t dram_noc_y = src_0_dram_noc_coord.y;
@@ -107,28 +104,23 @@ int main(int argc, char** argv) {
     /*Compute kernel arg initialization*/
     std::vector<uint32_t> compute_args(1);
     compute_args[0] = NUM_TILES;
+    
 
-    /*reused variable initialization*/
-    KernelHandle dataflow_kernel;
-    KernelHandle compute_kernel;
+    std::string kernel_folder = "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/circular_buffer_tile_addition/kernels";
 
     /*create kernels for each core*/
     /*SE Kernel*/
-    dataflow_kernel = CreateKernel(
+    KernelHandle dataflow_kernel = CreateKernel(
         program,
-        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/circular_buffer_tile_addition/"
-        "kernels/dataflow/"
-        "dataflow_kernel.cpp",
+        kernel_folder + "/dataflow/dataflow_kernel.cpp",
         start_core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
     SetRuntimeArgs(program, dataflow_kernel, start_core, dataflow_args);
 
     /* compute kernel */
-    compute_kernel = CreateKernel(
+    KernelHandle compute_kernel = CreateKernel(
         program,
-        "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/circular_buffer_tile_addition/"
-        "kernels/compute/"
-        "compute_kernel.cpp",
+        kernel_folder + "/compute/compute_kernel.cpp",
         start_core,
         ComputeConfig{
             .math_fidelity = MathFidelity::HiFi4,
@@ -175,21 +167,21 @@ int main(int argc, char** argv) {
         printf(
             "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
         printf(
-            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
+            "         Result (pre-cast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
 
         uint32_t output =
             pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
-        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
+        printf("Expected result (pre-cast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
 
         printf(
-            "  Actual last result (nocast) = %d, and after casting %d\n",
+            "  Actual last result (pre-cast) = %d, and after casting %d\n",
             (int)result_vec[num_els - 1],
             (int)result_vec_b16[2 * num_els - 1].to_float());
 
         output = pack_two_bfloat16_into_uint32(
             std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
         printf(
-            "Expected last result (nocast) = %d, and after casting %d\n",
+            "Expected last result (pre-cast) = %d, and after casting %d\n",
             output,
             (int)trgt_vec_b16[2 * num_els - 1].to_float());
     }

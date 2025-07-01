@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
-#include "tt_metal/host_api.hpp"
+#include <tt-metalium/host_api.hpp>
 #include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/bfloat16.hpp"
 
@@ -50,13 +49,13 @@ int main(int argc, char** argv) {
         Program program = CreateProgram();
         const uint32_t core_arr_size = 8;
         const uint32_t swing_algo_steps = 3;  // log2(core_arr_size)
-        CoreCoord start_core = {core_col,0};
-        CoreCoord end_core = {core_col,7};
+        CoreCoord start_core = {core_col, 0};
+        CoreCoord end_core = {core_col, 7};
         CoreRange cores(start_core, end_core);
 
         std::vector<CoreCoord> core_array(8);
         for (uint32_t i = 0; i < core_array.size(); i++) {
-            core_array[i] = {core_col,i};
+            core_array[i] = {core_col, i};
         }
 
         constexpr uint32_t single_tile_size = 2 * 1024;
@@ -162,7 +161,7 @@ int main(int argc, char** argv) {
             compute_args[3] = (uint32_t)start_direction_SE;
 
             for (int swing_step = 0; swing_step < swing_algo_steps; swing_step += 1) {
-                logical_core = {core_col,get_comm_partner(core_i, swing_step, core_arr_size)};
+                logical_core = {core_col, get_comm_partner(core_i, swing_step, core_arr_size)};
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[13 + 2 * swing_step] = {(uint32_t)physical_core.x};
                 dataflow_args[14 + 2 * swing_step] = {(uint32_t)physical_core.y};

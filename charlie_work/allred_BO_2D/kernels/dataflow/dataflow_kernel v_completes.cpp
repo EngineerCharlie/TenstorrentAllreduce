@@ -10,10 +10,10 @@
 void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
     uint32_t dst0_addr = get_arg_val<uint32_t>(1);
-    uint32_t src0_bank_id = get_arg_val<uint32_t>(2);
-    // uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
-    uint32_t dst0_bank_id = get_arg_val<uint32_t>(4);
-    // uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
+    uint32_t src0_dram_noc_x = get_arg_val<uint32_t>(2);
+    uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
+    uint32_t dst0_dram_noc_x = get_arg_val<uint32_t>(4);
+    uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
@@ -37,7 +37,7 @@ void kernel_main() {
     uint32_t packed_direction_bools = get_arg_val<uint32_t>(11);
     // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " started "<< ENDL();
 
-    uint64_t src0_noc_addr = get_noc_addr_from_bank_id<true>(src0_bank_id, src0_addr);
+    uint64_t src0_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_addr);
 
     // setup circular buffers
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
@@ -60,7 +60,6 @@ void kernel_main() {
     uint32_t ublock_size_bytes_semaphore = get_tile_size(cb_id_compute);
     uint32_t ublock_size_bytes_data = get_tile_size(cb_id_local);
     uint32_t tile_block_size = ublock_size_bytes_data * num_tiles_per_node;
-    uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
 
     uint32_t l1_write_addr_recv = get_write_ptr(cb_id_recv);
     uint32_t l1_write_addr_local = get_write_ptr(cb_id_local);
@@ -107,17 +106,14 @@ void kernel_main() {
         noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data * num_tiles);
         noc_async_read_barrier();
         cb_push_back(cb_id_local, num_tiles);
-        // DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node*this_core_i+1]
-        //        << " and sum[last]" << local_array[num_els - 1] << ENDL();
     }
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t j = 0; j < 1; j++) {
-        // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " <<
-        // local_array[512]
+    for (uint32_t j = 0; j < 2; j++) {
+        DPRINT << " data starting " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
@@ -127,7 +123,6 @@ void kernel_main() {
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
                 // await sem from compute then reserve cb
                 cb_wait_front(cb_id_this, 1);
-                cb_wait_front(cb_id_local, num_tiles);
                 cb_pop_front(cb_id_this, 1);
 
                 // await first sem from comm partner
@@ -155,33 +150,26 @@ void kernel_main() {
                 }
 
                 noc_async_write_barrier();
-                cb_pop_front(cb_id_local, num_tiles);
 
                 // await second sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_1, 1);
                 noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
                 noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
-                cb_reserve_back(cb_id_recv, num_tiles);
                 cb_push_back(cb_id_recv, num_tiles);
+                cb_push_back(cb_id_local, num_tiles);
             }
         }
-
+        DPRINT << " data waiting " << this_core_x << this_core_y << ENDL();
+        // DPRINT << " data pre-wait "<< ENDL();
         cb_wait_front(cb_id_this, 1);
         cb_pop_front(cb_id_this, 1);
+    DPRINT << " data done " << this_core_x << this_core_y << (uint32_t)this_core_SE << ENDL();
     }
     if (this_core_SE == direction_SE) {
         uint32_t offset = tile_block_size * this_core_i;
-        // DPRINT << " Num tiles: " << num_tiles << " Num tiles/node: " << num_tiles_per_node << " this_core_i "
-        //        << this_core_i << ENDL();
-        // DPRINT << " base_addr: " << dst0_addr << " offset: " << offset
-        //        << " final_addr: " << (dst0_addr + tile_block_size * this_core_i) <<
-        //        ENDL();
-        uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
+        uint64_t dst0_noc_addr = get_noc_addr(dst0_dram_noc_x, dst0_dram_noc_y, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
-        DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node*this_core_i+1]
-               << " and sum[last]" << local_array[num_els - 1] << ENDL();
-        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]
-               << ENDL();
+        uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
     }
 }

@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     uint32_t single_tile_size = TILE_SIZE_FACTOR * 2048;
-    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
+    constexpr tt::DataFormat data_format = tt::DataFormat::UInt16;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
     CircularBufferConfig cb_config_compute =
@@ -146,16 +146,16 @@ int main(int argc, char** argv) {
     uint32_t dst_dram_noc_y = 0;    // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
-    std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
+    std::vector<uint16_t> src_vec_0;   //(single_tile_size, 14);
+    std::vector<uint16_t> src_vec_1;   //(single_tile_size, 14);
     std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
     int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
     if (RND_SRC < 0) {
-        src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
+        src_vec_0 = std::vector<uint16_t>(num_els*2, 1);
         src_vec_1 = src_vec_0;
     } else {
-        src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
-        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
+        src_vec_0 = std::vector<uint16_t>(num_els*2, 1);//create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
+        src_vec_1 = std::vector<uint16_t>(num_els*2, 1);//create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
     }
 
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
@@ -342,7 +342,7 @@ int main(int argc, char** argv) {
         dataflow_args[10] = (uint32_t)true;
         dataflow_1_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO2_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
@@ -352,7 +352,7 @@ int main(int argc, char** argv) {
         dataflow_args[10] = (uint32_t)false;
         dataflow_0_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO2_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
             core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
         /* compute kernel */
         compute_kernel = CreateKernel(
             program,
-            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/compute/"
+            "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO2_2D/kernels/compute/"
             "compute_kernel.cpp",
             core_array[core_i],
             ComputeConfig{
@@ -374,63 +374,64 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
+        printf("prog finished \n");
         // DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
+    return 0;
+    // bool all_match = true;
+    // int num_matches = 0;
 
-    bool all_match = true;
-    int num_matches = 0;
+    // std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+    // std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
+    // std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+    // std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
 
-    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
-    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+    // int last_matching_index = 0;
+    // float error = 32.0;
+    // for (size_t i = 0; i < num_els * 2; i++) {
+    //     trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
+    //                                  (float)(TOTAL_NODES / 2));
+    //     if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
+    //                       result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
+    //         printf("Mismatch at index %zu:\n", i);
+    //         printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
+    //         printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
+    //         printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
+    //         all_match = false;
+    //     } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
+    //         last_matching_index = i;
+    //         num_matches++;
+    //     }
+    // }
 
-    int last_matching_index = 0;
-    float error = 32.0;
-    for (size_t i = 0; i < num_els * 2; i++) {
-        trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
-                                     (float)(TOTAL_NODES / 2));
-        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
-            printf("Mismatch at index %zu:\n", i);
-            printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
-            printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
-            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
-            all_match = false;
-        } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
-            last_matching_index = i;
-            num_matches++;
-        }
-    }
+    // if (all_match) {
+    //     printf("All values match!\n");
+    // } else {
+    //     /* Print actual and expected results*/
+    //     printf("Total matches: %d\n", num_matches);
+    //     printf(
+    //         "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
+    //     printf(
+    //         "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
 
-    if (all_match) {
-        printf("All values match!\n");
-    } else {
-        /* Print actual and expected results*/
-        printf("Total matches: %d\n", num_matches);
-        printf(
-            "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
-        printf(
-            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
+    //     uint32_t output =
+    //         pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
+    //     printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
 
-        uint32_t output =
-            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
-        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
+    //     printf(
+    //         "  Actual last result (nocast) = %d, and after casting %d\n",
+    //         (int)result_vec[num_els - 1],
+    //         (int)result_vec_b16[2 * num_els - 1].to_float());
 
-        printf(
-            "  Actual last result (nocast) = %d, and after casting %d\n",
-            (int)result_vec[num_els - 1],
-            (int)result_vec_b16[2 * num_els - 1].to_float());
-
-        output = pack_two_bfloat16_into_uint32(
-            std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
-        printf(
-            "Expected last result (nocast) = %d, and after casting %d\n",
-            output,
-            (int)trgt_vec_b16[2 * num_els - 1].to_float());
-    }
+    //     output = pack_two_bfloat16_into_uint32(
+    //         std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
+    //     printf(
+    //         "Expected last result (nocast) = %d, and after casting %d\n",
+    //         output,
+    //         (int)trgt_vec_b16[2 * num_els - 1].to_float());
+    // }
     CloseDevice(device);
 }
 
