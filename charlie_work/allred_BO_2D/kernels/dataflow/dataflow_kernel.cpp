@@ -179,9 +179,10 @@ void kernel_main() {
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
-        DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node*this_core_i+1]
-               << " and sum[last]" << local_array[num_els - 1] << ENDL();
-        DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " arr512: " << local_array[512]
-               << ENDL();
+        // DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node * this_core_i + 1] << " and sum[last]"
+        //        << local_array[num_els - 1] << ENDL();
+        DPRINT << "NOC SE " << ENDL();
+    } else {
+        DPRINT << "NOC NW " << ENDL();
     }
 }

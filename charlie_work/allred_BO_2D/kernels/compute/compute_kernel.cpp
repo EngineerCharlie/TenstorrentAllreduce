@@ -49,52 +49,54 @@ void MAIN {
             }
 
             // Await signal from NOC that data is on local memory
-            cb_reserve_back(cb_id_local, num_tiles);
+
             cb_wait_front(cb_id_recv, num_tiles);
+            // cb_reserve_back(cb_id_local, num_tiles);
 
             // /*Fast wrong version*/
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                 if (recv_block) {
+                    // if (false) {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
-                        // DPRINT_MATH(DPRINT << "adding tile: " << tile_num << ENDL());
                         tile_regs_acquire();
-                        // add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                         add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
-
-                        // copy_tile_to_dst_init_short(cb_id_local);
-                        // copy_tile(cb_id_local, 0, 0);
-                        // binary_dest_reuse_tiles_init<
-                        //     EltwiseBinaryType::ELWADD,
-                        //     EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_local);
-                        // binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-                        //     cb_id_recv, 0, 0);
                         tile_regs_commit();
 
                         tile_regs_wait();
-                        pack_tile(reg_index, cb_id_local, tile_num);  
+                        pack_tile(reg_index, cb_id_local);
                         cb_pop_front(cb_id_recv, 1);
                         cb_push_back(cb_id_local, 1);
                         tile_regs_release();
-                        
+
                         reg_index = reg_index < 7 ? reg_index + 1 : 0;  // Increment reg index
                     }
                 } else {
-                    for (uint32_t ignore = 0; ignore < num_tiles_per_node; ignore++) {
+                    for (uint32_t tile_num = n_block * num_tiles_per_node;
+                         tile_num < (n_block + 1) * num_tiles_per_node;
+                         tile_num++) {
+                        // tile_regs_acquire();
+                        // add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                        // tile_regs_commit();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+
+                        // tile_regs_wait();
+                        // pack_tile(reg_index, cb_id_local);
                         cb_pop_front(cb_id_recv, 1);
                         cb_push_back(cb_id_local, 1);
+                        // tile_regs_release();
                     }
                 }
             }
             // cb_pop_front(cb_id_recv, num_tiles);
             // cb_push_back(cb_id_local, num_tiles);
         }
+
         cb_push_back(cb_id_SE, 1);
         cb_push_back(cb_id_NW, 1);
     }
-    DPRINT_MATH(DPRINT << "Compute " << this_core_x << this_core_y << " done " << ENDL());
+    DPRINT_MATH(DPRINT << "Compute done " << ENDL());
 }
 }  // namespace NAMESPACE
