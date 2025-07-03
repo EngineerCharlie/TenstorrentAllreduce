@@ -10,7 +10,7 @@ def analyze_execution_cycles(csv_file):
     all_red_loop = df[df['  zone name'] == 'ALL_RED_LOOP']
     
     # Group by core_x, core_y, RISC processor type, and zone phase
-    grouped = all_red_loop.groupby([' core_x', ' core_y', ' RISC processor type', ' zone phase'])
+    grouped = all_red_loop.groupby([' core_x', ' core_y', ' RISC processor type', ' type'])
     
     # Extract latest begin and end for each core_x, core_y, and processor type
     execution_cycles = {}
@@ -18,16 +18,18 @@ def analyze_execution_cycles(csv_file):
         latest_entry = group.sort_values(' time[cycles since reset]', ascending=False).iloc[0]
         key = (core_x, core_y)
         if key not in execution_cycles:
-            execution_cycles[key] = {'begin': {}, 'end': {}}
+            execution_cycles[key] = {'ZONE_START': {}, 'ZONE_END': {}}
+        if phase not in execution_cycles[key]:
+            execution_cycles[key][phase] = {}
         execution_cycles[key][phase][processor] = latest_entry[' time[cycles since reset]']
-    
+
     # Calculate execution times and store with core information
     execution_times = []
     core_times = []  # List to store tuples of (execution_time, core_x, core_y)
     for (core_x, core_y), phases in execution_cycles.items():
-        if 'begin' in phases and 'end' in phases:
-            latest_begin = max(phases['begin'].values())
-            latest_end = max(phases['end'].values())
+        if 'ZONE_START' in phases and 'ZONE_END' in phases:
+            latest_begin = max(phases['ZONE_START'].values())
+            latest_end = max(phases['ZONE_END'].values())
             exec_time = latest_end - latest_begin
             execution_times.append(exec_time)
             core_times.append((exec_time, core_x, core_y))

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/device.hpp>
+#include <tt-metalium/tt_metal.hpp>
 #include <tt-metalium/bfloat16.hpp>
 #include <array>
 #include <cmath>  // For std::log2
@@ -374,7 +375,7 @@ int main(int argc, char** argv) {
     if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
-        // DumpDeviceProfileResults(device, program);
+        tt_metal::detail::DumpDeviceProfileResults(device);
     }
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
