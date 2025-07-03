@@ -136,7 +136,9 @@ void kernel_main() {
                 noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
 
                 // DPRINT << "\n\n\n\n\nSTEP NUMBER: " << i << ENDL();
-
+                uint32_t sem_1_index = 0;
+                uint32_t num_syncs = 4;
+                uint32_t n_block_sync = total_nodes / num_syncs - 1;
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                     send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                     if (send_block) {
@@ -149,20 +151,20 @@ void kernel_main() {
                             n_block++;
                             send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                         }
-                        // DPRINT << " for blocks: " << tiles_to_send << ENDL();
                         noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * tiles_to_send);
                     }
+                    if (n_block >= n_block_sync) {
+                        dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[sem_1_index]);
+                        noc_async_write_barrier();
+                        noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                        noc_semaphore_wait(semaphore_1_ptr[sem_1_index], 1);
+                        noc_semaphore_set(semaphore_1_ptr[sem_1_index], 0);
+                        sem_1_index = sem_1_index % num_sem_1;  // Reset sem_1_index after each step
+                        n_block_sync = n_block_sync + (total_nodes / num_syncs);
+                        cb_push_back(cb_id_recv, num_tiles/num_syncs);
+                        cb_pop_front(cb_id_local, num_tiles/num_syncs);
+                    }
                 }
-
-                noc_async_write_barrier();
-                cb_pop_front(cb_id_local, num_tiles);
-
-                // await second sem from comm partner
-                noc_semaphore_inc(dst_noc_semaphore_1, 1);
-                noc_semaphore_wait(semaphore_1_ptr[i % num_sem_1], 1);
-                noc_semaphore_set(semaphore_1_ptr[i % num_sem_1], 0);
-                cb_reserve_back(cb_id_recv, num_tiles);
-                cb_push_back(cb_id_recv, num_tiles);
             }
         }
 
@@ -181,8 +183,8 @@ void kernel_main() {
         noc_async_write_barrier();
         // DPRINT << "NOC sum[0]: " << local_array[num_tiles_per_node * this_core_i + 1] << " and sum[last]"
         //        << local_array[num_els - 1] << ENDL();
-        DPRINT << "NOC SE " << ENDL();
+        DPRINT << "NOC SE editd" << ENDL();
     } else {
-        DPRINT << "NOC NW " << ENDL();
+        DPRINT << "NOC NW editd" << ENDL();
     }
 }

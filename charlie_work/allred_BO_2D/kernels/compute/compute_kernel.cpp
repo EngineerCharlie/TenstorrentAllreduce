@@ -50,7 +50,7 @@ void MAIN {
 
             // Await signal from NOC that data is on local memory
 
-            cb_wait_front(cb_id_recv, num_tiles);
+            // cb_wait_front(cb_id_recv, num_tiles);
             // cb_reserve_back(cb_id_local, num_tiles);
 
             // /*Fast wrong version*/
@@ -63,6 +63,7 @@ void MAIN {
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
                         tile_regs_acquire();
+                        cb_wait_front(cb_id_recv, 1);
                         add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
                         tile_regs_commit();
 
@@ -78,20 +79,19 @@ void MAIN {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
-                        // tile_regs_acquire();
-                        // add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
-                        // tile_regs_commit();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+                        tile_regs_acquire();
+                        cb_wait_front(cb_id_recv, 1);
+                        add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                        tile_regs_commit();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
 
-                        // tile_regs_wait();
-                        // pack_tile(reg_index, cb_id_local);
+                        tile_regs_wait();
+                        pack_tile(reg_index, cb_id_local);
                         cb_pop_front(cb_id_recv, 1);
                         cb_push_back(cb_id_local, 1);
-                        // tile_regs_release();
+                        tile_regs_release();
                     }
                 }
             }
-            // cb_pop_front(cb_id_recv, num_tiles);
-            // cb_push_back(cb_id_local, num_tiles);
         }
 
         cb_push_back(cb_id_SE, 1);
