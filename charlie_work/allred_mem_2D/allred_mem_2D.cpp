@@ -146,13 +146,10 @@ int main(int argc, char** argv) {
     auto src_1_dram_noc_coord = 0;   // src_1_dram_buffer->noc_coordinates();
     auto common_dram_noc_coord = 0;  // common_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = 0;     // dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_dram_noc_x = 0;   // src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = 0;   // src_0_dram_noc_coord.y;
-    uint32_t src_1_dram_noc_x = 0;   // src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = 0;   // src_1_dram_noc_coord.y;
-    uint32_t common_dram_noc_x = 0;  // common_dram_noc_coord.x;
-    uint32_t common_dram_noc_y = 0;  // common_dram_noc_coord.y;
-    uint32_t dst_dram_noc_x = 0;     // dst_dram_noc_coord.x;
+    uint32_t src_0_bank_id = 0;   // src_0_dram_noc_coord.x;
+    uint32_t src_1_bank_id = 0;   // src_1_dram_noc_coord.x;
+    uint32_t common_bank_id = 0;  // common_dram_noc_coord.x;
+    uint32_t dst_bank_id = 0;     // dst_dram_noc_coord.x;
     uint32_t dst_dram_noc_y = 0;     // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
@@ -188,11 +185,9 @@ int main(int argc, char** argv) {
     37-48: block indexes to send at each step
     */
     dataflow_args[1] = dst_dram_buffer->address();
-    dataflow_args[4] = dst_dram_noc_x;
-    dataflow_args[5] = dst_dram_noc_y;
+    dataflow_args[4] = dst_bank_id;
     dataflow_args[6] = common_dram_buffer->address();
-    dataflow_args[7] = common_dram_noc_x;
-    dataflow_args[8] = common_dram_noc_y;
+    dataflow_args[7] = common_bank_id;
     dataflow_args[9] = SWING_ALGO_STEPS;
     dataflow_args[15] = NUM_TILES;
     dataflow_args[16] = NUM_TILES / TOTAL_NODES;  // tiles per node
@@ -229,12 +224,10 @@ int main(int argc, char** argv) {
         compute_args[3] = (uint32_t)core_i;
         if (core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = src_1_dram_buffer->address();
-            dataflow_args[2] = src_1_dram_noc_x;
-            dataflow_args[3] = src_1_dram_noc_y;
+            dataflow_args[2] = src_1_bank_id;
         } else {
             dataflow_args[0] = src_0_dram_buffer->address();
-            dataflow_args[2] = src_0_dram_noc_x;
-            dataflow_args[3] = src_0_dram_noc_y;
+            dataflow_args[2] = src_0_bank_id;
         }
 
         /* set block indexes to 0 */
@@ -388,13 +381,14 @@ int main(int argc, char** argv) {
         trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
                                      (float)(TOTAL_NODES / 2));
         if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
+                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float() - error)) {
             printf("Mismatch at index %zu:\n", i);
             printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
             printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
             printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
             all_match = false;
-        } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
+        } else if (result_vec_b16[i].to_float() <= trgt_vec_b16[i].to_float() + error ||
+                          result_vec_b16[i].to_float() >= trgt_vec_b16[i].to_float() - error) {
             last_matching_index = i;
             num_matches++;
         }

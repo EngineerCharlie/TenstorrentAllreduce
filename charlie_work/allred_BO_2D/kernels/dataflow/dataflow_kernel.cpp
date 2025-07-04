@@ -115,7 +115,7 @@ void kernel_main() {
     bool direction_SE, send_block;
 
     // Signal appropriate NOC core to exchange data with other core
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 2; j++) {
         // DPRINT << "NOC " << this_core_x << this_core_y << (int)this_core_SE << " sum[512]: " <<
         // local_array[512]
         DeviceZoneScopedN("ALL_RED_LOOP");
@@ -154,6 +154,8 @@ void kernel_main() {
                         noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * tiles_to_send);
                     }
                     if (n_block >= n_block_sync) {
+                        // Periodically (every num_tiles/num_sync blocks) increment synchronize the nodes and 
+                        // increment the the circular buffers, allowing computation to proceed
                         dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[sem_1_index]);
                         noc_async_write_barrier();
                         noc_semaphore_inc(dst_noc_semaphore_1, 1);

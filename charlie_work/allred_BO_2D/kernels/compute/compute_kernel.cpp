@@ -37,7 +37,7 @@ void MAIN {
     cb_pop_front(cb_id_local, num_tiles);
 
     bool SE, recv_block;
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 2; j++) {
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -57,8 +57,8 @@ void MAIN {
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+                                                                 // if (recv_block) {
                 if (recv_block) {
-                    // if (false) {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
@@ -68,7 +68,9 @@ void MAIN {
                         tile_regs_commit();
 
                         tile_regs_wait();
+                        // if (recv_block) {
                         pack_tile(reg_index, cb_id_local);
+                        // }
                         cb_pop_front(cb_id_recv, 1);
                         cb_push_back(cb_id_local, 1);
                         tile_regs_release();
@@ -79,13 +81,15 @@ void MAIN {
                     for (uint32_t tile_num = n_block * num_tiles_per_node;
                          tile_num < (n_block + 1) * num_tiles_per_node;
                          tile_num++) {
+                        // NOTE: The tiles/computation/packing is only required for 8x8 grid
+                        // On a 2x2 and 4x4, the circular buffer actions are enough
                         tile_regs_acquire();
                         cb_wait_front(cb_id_recv, 1);
                         add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
-                        tile_regs_commit();                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+                        tile_regs_commit();
 
                         tile_regs_wait();
-                        pack_tile(reg_index, cb_id_local);
+                        // pack_tile(reg_index, cb_id_local); //No need to pack since this data is never used
                         cb_pop_front(cb_id_recv, 1);
                         cb_push_back(cb_id_local, 1);
                         tile_regs_release();
