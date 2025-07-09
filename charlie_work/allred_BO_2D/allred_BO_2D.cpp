@@ -68,12 +68,9 @@ int main(int argc, char** argv) {
     }
     NUM_TILES = NUM_TILES * TOTAL_NODES;
 
-    int TILE_SIZE_FACTOR = 1;
+    int ERROR = 1;
     if (argc >= 7) {
-        TILE_SIZE_FACTOR = std::stoi(argv[6]);
-        if (TILE_SIZE_FACTOR < 1 || TILE_SIZE_FACTOR > 4) {
-            TILE_SIZE_FACTOR = 1;
-        }
+        ERROR = std::stoi(argv[6]);
     }
 
     /*Setup core array (full grid or subsection)*/
@@ -92,7 +89,7 @@ int main(int argc, char** argv) {
     uint32_t num_recv_tiles = NUM_TILES;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
-    uint32_t single_tile_size = TILE_SIZE_FACTOR * 2048;
+    uint32_t single_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
@@ -389,7 +386,7 @@ int main(int argc, char** argv) {
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
 
     int last_matching_index = 0;
-    float error = 32.0;
+    float error = (float) ERROR;
     for (size_t i = 0; i < num_els * 2; i++) {
         trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
                                      (float)(TOTAL_NODES / 2));
