@@ -67,12 +67,9 @@ int main(int argc, char** argv) {
     }
     NUM_TILES = NUM_TILES * TOTAL_NODES;
 
-    int TILE_SIZE_FACTOR = 1;
+    int ERROR = 1;
     if (argc >= 7) {
-        TILE_SIZE_FACTOR = std::stoi(argv[6]);
-        if (TILE_SIZE_FACTOR < 1 || TILE_SIZE_FACTOR > 4) {
-            TILE_SIZE_FACTOR = 1;
-        }
+        ERROR = std::stoi(argv[6]);
     }
 
     /*Setup core array (full grid or subsection)*/
@@ -91,7 +88,7 @@ int main(int argc, char** argv) {
     uint32_t num_recv_tiles = NUM_TILES;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
-    uint32_t single_tile_size = TILE_SIZE_FACTOR * 2048;
+    uint32_t single_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
@@ -146,10 +143,10 @@ int main(int argc, char** argv) {
     auto src_1_dram_noc_coord = 0;   // src_1_dram_buffer->noc_coordinates();
     auto common_dram_noc_coord = 0;  // common_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = 0;     // dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_bank_id = 0;   // src_0_dram_noc_coord.x;
-    uint32_t src_1_bank_id = 0;   // src_1_dram_noc_coord.x;
-    uint32_t common_bank_id = 0;  // common_dram_noc_coord.x;
-    uint32_t dst_bank_id = 0;     // dst_dram_noc_coord.x;
+    uint32_t src_0_bank_id = 0;      // src_0_dram_noc_coord.x;
+    uint32_t src_1_bank_id = 0;      // src_1_dram_noc_coord.x;
+    uint32_t common_bank_id = 0;     // common_dram_noc_coord.x;
+    uint32_t dst_bank_id = 0;        // dst_dram_noc_coord.x;
     uint32_t dst_dram_noc_y = 0;     // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
@@ -162,7 +159,7 @@ int main(int argc, char** argv) {
         src_vec_1 = src_vec_0;
     } else {
         src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
-        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
+        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 100);
     }
 
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
@@ -376,21 +373,26 @@ int main(int argc, char** argv) {
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
 
     int last_matching_index = 0;
-    float error = 32.0;
+    float error = (float)ERROR;
+    float max_error = 0.0f;
+    int max_error_index = 0;
     for (size_t i = 0; i < num_els * 2; i++) {
         trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
                                      (float)(TOTAL_NODES / 2));
-        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float() - error)) {
+        if (all_match && (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > error)) {
             printf("Mismatch at index %zu:\n", i);
             printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
             printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
             printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
             all_match = false;
-        } else if (result_vec_b16[i].to_float() <= trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() >= trgt_vec_b16[i].to_float() - error) {
+        } else if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) <= error) {
             last_matching_index = i;
             num_matches++;
+        } else {
+            if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > max_error) {
+                max_error = fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float());
+                max_error_index = i;
+            }
         }
     }
 
@@ -419,6 +421,8 @@ int main(int argc, char** argv) {
             "Expected last result (nocast) = %d, and after casting %d\n",
             output,
             (int)trgt_vec_b16[2 * num_els - 1].to_float());
+        printf("Max error: %f\n", max_error);
+        printf("Max error index: %d\n", max_error_index);
     }
     CloseDevice(device);
 }
