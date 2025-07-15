@@ -386,7 +386,7 @@ int main(int argc, char** argv) {
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
 
     int last_matching_index = 0;
-    float error = (float) ERROR;
+    float error = (float)ERROR;
     for (size_t i = 0; i < num_els * 2; i++) {
         trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
                                      (float)(TOTAL_NODES / 2));
