@@ -61,11 +61,11 @@ int main(int argc, char** argv) {
         RND_SRC = std::stoi(argv[4]);
     }
 
-    int NUM_TILES = 1;
+    int NUM_TILES_PER_NODE = 1;
     if (argc >= 6) {
-        NUM_TILES = std::stoi(argv[5]);
+        NUM_TILES_PER_NODE = std::stoi(argv[5]);
     }
-    NUM_TILES = NUM_TILES * TOTAL_NODES;
+    int NUM_TILES = NUM_TILES_PER_NODE * TOTAL_NODES;
 
     int ERROR = 1;
     if (argc >= 7) {
@@ -422,7 +422,16 @@ int main(int argc, char** argv) {
             output,
             (int)trgt_vec_b16[2 * num_els - 1].to_float());
         printf("Max error: %f\n", max_error);
-        printf("Max error index: %d\n", max_error_index);
+        printf(
+            "Max error index: %d and vals %f and %f\n",
+            max_error_index,
+            result_vec_b16[max_error_index].to_float(),
+            trgt_vec_b16[max_error_index].to_float());
+        printf(
+            "Max error index +10: %d and vals %f and %f\n",
+            max_error_index + 10,
+            result_vec_b16[max_error_index + 10].to_float(),
+            trgt_vec_b16[max_error_index + 10].to_float());
     }
     CloseDevice(device);
 }

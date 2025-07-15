@@ -40,36 +40,15 @@ void MAIN {
     cb_reserve_back(cb_id_local, num_tiles);
     bool SE, recv_block;
     uint32_t offset = this_core_i * num_tiles_per_node;
-    for (uint32_t j = 0; j < 1; j++) {
-        // for (uint32_t n_tile = 0; n_tile < num_tiles; n_tile++) {
-        //     tile_regs_acquire();
-        //     tile_regs_wait();
-        //     copy_tile_to_dst_init_short(cb_id_local);
-        //     copy_tile(cb_id_local, n_tile % num_tiles_per_node, n_tile % num_tiles_per_node);
-        //     cb_wait_front(cb_id_recv, 1);
-        //     if (n_tile >= offset && n_tile < offset + num_tiles_per_node) {
-        //         cb_pop_front(cb_id_recv, 1);
-        //         continue;  // Skip tiles that are this core's responsibility
-        //     }
-        //     binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-        //         cb_id_recv);
-        //     binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
-        //         cb_id_recv, 0, n_tile % num_tiles_per_node);
-        //     cb_pop_front(cb_id_recv, 1);
-        //     tile_regs_commit();
-
-        //     pack_tile(n_tile % num_tiles_per_node, cb_id_local, n_tile % num_tiles_per_node);
-        //     tile_regs_release();
-        // }
-
+    for (uint32_t j = 0; j < 5; j++) {
         tile_regs_acquire();
         tile_regs_wait();
         copy_tile_to_dst_init_short(cb_id_local);
         for (uint32_t n_tile = 0; n_tile < num_tiles_per_node; n_tile++) {
             copy_tile(cb_id_local, n_tile, n_tile);
         }
-        
-        binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(cb_id_recv);
+
+        binary_dest_reuse_tiles_init<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCB>(cb_id_recv);
 
         for (uint32_t n_tile = 0; n_tile < num_tiles; n_tile++) {
             cb_wait_front(cb_id_recv, 1);
@@ -77,7 +56,7 @@ void MAIN {
                 cb_pop_front(cb_id_recv, 1);
                 continue;  // Skip tiles that are this core's responsibility
             }
-            binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCA>(
+            binary_dest_reuse_tiles<EltwiseBinaryType::ELWADD, EltwiseBinaryReuseDestType::DEST_TO_SRCB>(
                 cb_id_recv, 0, n_tile % num_tiles_per_node);
             cb_pop_front(cb_id_recv, 1);
         }

@@ -15,6 +15,7 @@ void sync_nodes(
     volatile tt_l1_ptr uint32_t**,
     volatile tt_l1_ptr uint32_t**,
     uint32_t*,
+    uint32_t*,
     uint32_t*);
 void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
@@ -96,6 +97,7 @@ void kernel_main() {
     // Read and setup semaphores
     const uint32_t num_sem_0 = 6;
     const uint32_t num_sem_1 = 8 - num_sem_0;
+    uint32_t num_syncs = 1;
     uint32_t semaphore_0[num_sem_0];
     volatile tt_l1_ptr uint32_t* semaphore_0_ptr[num_sem_0];
     uint32_t semaphore_1[num_sem_1];
@@ -115,13 +117,20 @@ void kernel_main() {
         cb_reserve_back(cb_id_local, num_tiles);
         noc_async_read(src0_noc_addr, l1_write_addr_local, total_vector_size);
         noc_async_read_barrier();
-        cb_push_back(cb_id_local, num_tiles);
     }
 
     sync_nodes(
-        algo_steps, this_core_SE, num_sem_0, semaphore_0, semaphore_0_ptr, semaphore_1_ptr, dst_core_x, dst_core_y);
+        algo_steps,
+        this_core_SE,
+        num_sem_0,
+        semaphore_0,
+        semaphore_0_ptr,
+        semaphore_1_ptr,
+        dst_core_x,
+        dst_core_y,
+        &num_syncs);
 
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 5; j++) {
         DeviceZoneScopedN("ALL_RED_LOOP");
         {
             uint32_t write_offset = total_vector_size * this_core_i;
@@ -139,7 +148,8 @@ void kernel_main() {
                 semaphore_0_ptr,
                 semaphore_1_ptr,
                 dst_core_x,
-                dst_core_y);
+                dst_core_y,
+                &num_syncs);
             uint32_t el_start, el_end;
             if (this_core_SE) {
                 el_start = 0;
@@ -151,26 +161,9 @@ void kernel_main() {
             for (uint32_t el = el_start; el < el_end; el++) {
                 local_array[el] = local_array[this_core_i * num_els_per_node + el];
             }
-            // DPRINT << "NOC sum [first]: " << local_array[el_start] << " and sum [last]" << local_array[el_end - 1]
-            //        << ENDL();
-            // uint32_t i_start, i_end;
-            // if (this_core_SE) {
-            //     i_start = 0;
-            //     i_end = total_nodes / 2;
-            // } else {
-            //     i_start = total_nodes / 2;
-            //     i_end = total_nodes;
-            // }
-            // for (uint32_t i = i_start; i < i_end; i++) {
-            //     uint32_t read_offset = i * total_vector_size + this_core_i * tile_block_size;  // i *
-            //     tile_block_size; common_noc_addr = get_noc_addr_from_bank_id<true>(common_bank_id, common_addr +
-            //     read_offset); noc_async_read(common_noc_addr, l1_write_addr_recv + i * tile_block_size,
-            //     tile_block_size);
-            // }
-            // noc_async_read_barrier();
-            // cb_push_back(cb_id_recv, num_tiles / 2);#
             uint32_t i_start, i_end;
             if (this_core_SE) {
+                cb_push_back(cb_id_local, num_tiles);
                 for (uint32_t i = 0; i < total_nodes; i++) {
                     uint32_t read_offset =
                         i * total_vector_size + this_core_i * tile_block_size;  // i * tile_block_size;
@@ -179,31 +172,20 @@ void kernel_main() {
                     noc_async_read_barrier();
                     cb_push_back(cb_id_recv, num_tiles_per_node);
                 }
-                // noc_async_read_barrier();
-                // cb_push_back(cb_id_recv, num_tiles);
             }
             DPRINT << "NOC after  [first]: " << recv_array[this_core_i * num_els_per_node + el_start]
                    << " and sum [last]" << recv_array[this_core_i * num_els_per_node + el_end - 1] << ENDL();
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
-            // DPRINT << "NOC after  [first]: " << recv_array[el_start] << " and sum [last]" << recv_array[el_end - 1]
-            //    << ENDL();
-
-            // DPRINT << " fin" << ENDL();
         }
     }
     uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
 
     if (this_core_SE) {
         uint32_t offset = tile_block_size * this_core_i;
-        // DPRINT << " Num tiles: " << num_tiles << " Num tiles/node: " << num_tiles_per_node << " num_els/node "
-        //        << num_els_per_node << ENDL();
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
-        // DPRINT << "NOC sum [first]: " << local_array[0] << " and sum [last]" << local_array[num_els_per_node - 1]
-        //        << ENDL();
-        // DPRINT << "NOC 4k [first]: " << local_array[4000] << " and sum [last]" << local_array[4001] << ENDL();
     }
 }
 
@@ -215,20 +197,21 @@ void sync_nodes(
     volatile tt_l1_ptr uint32_t** semaphore_0_ptr,
     volatile tt_l1_ptr uint32_t** semaphore_1_ptr,
     uint32_t* dst_core_x,
-    uint32_t* dst_core_y) {
+    uint32_t* dst_core_y,
+    uint32_t* num_syncs) {
     if (!this_core_SE) {
         // NW core to sync with all other NW cores via swing algo
         for (uint32_t i = 0; i < algo_steps; i++) {
             // DPRINT << " step " << i << ENDL();
             uint64_t dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
             noc_semaphore_inc(dst_noc_semaphore_0, 1);
-            noc_semaphore_wait(semaphore_0_ptr[i % num_sem_0], 1);
-            noc_semaphore_set(semaphore_0_ptr[i % num_sem_0], 0);
+            noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], *num_syncs);
         }
         // NW core syncs with SE core
         noc_semaphore_set(semaphore_1_ptr[0], 1);
         noc_semaphore_wait(semaphore_1_ptr[1], 1);
         noc_semaphore_set(semaphore_1_ptr[1], 0);
+        (*num_syncs)++;
     } else {
         // SE core syncs with NW core
         noc_semaphore_set(semaphore_1_ptr[1], 1);
