@@ -5,7 +5,7 @@
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/bfloat16.hpp>
 #include <array>
-#include <cmath> // For std::log2
+#include <cmath>  // For std::log2
 #include <cstdint>
 #include "hostdevcommon/profiler_common.h"
 
@@ -13,80 +13,63 @@ using namespace tt;
 using namespace tt::tt_metal;
 
 int get_comm_partner_swing_2D(int, int, bool, int, int);
-void get_swing_block_comm_indexes(int, int, uint32_t *, bool, int, int);
-int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t &, int);
-void get_recdub_block_comm_indexes(int, int, uint32_t *, bool, int, int, int, uint32_t &);
+void get_swing_block_comm_indexes(int, int, uint32_t*, bool, int, int);
+int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
+void get_recdub_block_comm_indexes(int, int, uint32_t*, bool, int, int, int, uint32_t&);
 uint32_t get_SE(int, int);
 int highest_power_of_two(int);
 
-std::string uint32_to_binary_string(uint32_t value)
-{
+std::string uint32_to_binary_string(uint32_t value) {
     std::string result(32, '0');
-    for (int i = 0; i < 32; i++)
-    {
+    for (int i = 0; i < 32; i++) {
         result[31 - i] = (value & (1 << i)) ? '1' : '0';
     }
     return result;
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char** argv) {
     /* Silicon accelerator setup */
-    IDevice *device = CreateDevice(0);
+    IDevice* device = CreateDevice(0);
 
     /* Setup program to execute along with its buffers and kernels to use */
-    CommandQueue &cq = device->command_queue();
+    CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
     /*Assign input args*/
     bool SWING_VERSION = true;
-    if (argc >= 2 && std::stoi(argv[1]) == 1)
-    {
+    if (argc >= 2 && std::stoi(argv[1]) == 1) {
         SWING_VERSION = true;
-    }
-    else
-    {
+    } else {
         SWING_VERSION = false;
     }
 
     bool RUN_KERNEL = false;
-    if (argc >= 3 && std::stoi(argv[2]) == 1)
-    {
+    if (argc >= 3 && std::stoi(argv[2]) == 1) {
         RUN_KERNEL = true;
     }
 
     int SIDE_LENGTH;
-    if (argc >= 4)
-    {
+    if (argc >= 4) {
         SIDE_LENGTH = highest_power_of_two(std::stoi(argv[3]));
-    }
-    else
-    {
+    } else {
         SIDE_LENGTH = 1;
     }
     uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
 
     int RND_SRC = 0;
-    if (argc >= 5)
-    {
+    if (argc >= 5) {
         RND_SRC = std::stoi(argv[4]);
     }
 
-    int NUM_TILES = 1;
-    if (argc >= 6)
-    {
-        NUM_TILES = std::stoi(argv[5]);
+    int NUM_TILES_PER_NODE = 1;
+    if (argc >= 6) {
+        NUM_TILES_PER_NODE = std::stoi(argv[5]);
     }
-    NUM_TILES = NUM_TILES * TOTAL_NODES;
+    int NUM_TILES = NUM_TILES_PER_NODE * TOTAL_NODES;
 
-    int TILE_SIZE_FACTOR = 1;
-    if (argc >= 7)
-    {
-        TILE_SIZE_FACTOR = std::stoi(argv[6]);
-        if (TILE_SIZE_FACTOR < 1 || TILE_SIZE_FACTOR > 4)
-        {
-            TILE_SIZE_FACTOR = 1;
-        }
+    int ERROR = 1;
+    if (argc >= 7) {
+        ERROR = std::stoi(argv[6]);
     }
 
     /*Setup core array (full grid or subsection)*/
@@ -96,8 +79,7 @@ int main(int argc, char **argv)
     CoreRange cores(start_core, end_core);
 
     std::vector<CoreCoord> core_array(TOTAL_NODES);
-    for (uint32_t i = 0; i < core_array.size(); i++)
-    {
+    for (uint32_t i = 0; i < core_array.size(); i++) {
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
@@ -106,7 +88,7 @@ int main(int argc, char **argv)
     uint32_t num_recv_tiles = NUM_TILES;
     constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
-    uint32_t single_tile_size = TILE_SIZE_FACTOR * 2048;
+    uint32_t single_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 
     constexpr uint32_t cb_index_compute = CBIndex::c_0;
@@ -157,33 +139,27 @@ int main(int argc, char **argv)
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
     std::shared_ptr<tt::tt_metal::Buffer> common_dram_buffer = CreateBuffer(common_dram_config);
 
-    auto src_0_dram_noc_coord = 0;  // src_0_dram_buffer->noc_coordinates();
-    auto src_1_dram_noc_coord = 0;  // src_1_dram_buffer->noc_coordinates();
-    auto common_dram_noc_coord = 0; // common_dram_buffer->noc_coordinates();
-    auto dst_dram_noc_coord = 0;    // dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_dram_noc_x = 0;  // src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = 0;  // src_0_dram_noc_coord.y;
-    uint32_t src_1_dram_noc_x = 0;  // src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = 0;  // src_1_dram_noc_coord.y;
-    uint32_t common_dram_noc_x = 0; // common_dram_noc_coord.x;
-    uint32_t common_dram_noc_y = 0; // common_dram_noc_coord.y;
-    uint32_t dst_dram_noc_x = 0;    // dst_dram_noc_coord.x;
-    uint32_t dst_dram_noc_y = 0;    // dst_dram_noc_coord.y;
+    auto src_0_dram_noc_coord = 0;   // src_0_dram_buffer->noc_coordinates();
+    auto src_1_dram_noc_coord = 0;   // src_1_dram_buffer->noc_coordinates();
+    auto common_dram_noc_coord = 0;  // common_dram_buffer->noc_coordinates();
+    auto dst_dram_noc_coord = 0;     // dst_dram_buffer->noc_coordinates();
+    uint32_t src_0_bank_id = 0;      // src_0_dram_noc_coord.x;
+    uint32_t src_1_bank_id = 0;      // src_1_dram_noc_coord.x;
+    uint32_t common_bank_id = 0;     // common_dram_noc_coord.x;
+    uint32_t dst_bank_id = 0;        // dst_dram_noc_coord.x;
+    uint32_t dst_dram_noc_y = 0;     // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src_vec_0;  //(single_tile_size, 14);
-    std::vector<uint32_t> src_vec_1;  //(single_tile_size, 14);
-    std::vector<uint32_t> result_vec; //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
+    std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
+    std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
     int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
-    if (RND_SRC < 0)
-    {
+    if (RND_SRC < 0) {
         src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
         src_vec_1 = src_vec_0;
-    }
-    else
-    {
+    } else {
         src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
-        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
+        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 100);
     }
 
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
@@ -206,16 +182,13 @@ int main(int argc, char **argv)
     37-48: block indexes to send at each step
     */
     dataflow_args[1] = dst_dram_buffer->address();
-    dataflow_args[4] = dst_dram_noc_x;
-    dataflow_args[5] = dst_dram_noc_y;
+    dataflow_args[4] = dst_bank_id;
     dataflow_args[6] = common_dram_buffer->address();
-    dataflow_args[7] = common_dram_noc_x;
-    dataflow_args[8] = common_dram_noc_y;
+    dataflow_args[7] = common_bank_id;
     dataflow_args[9] = SWING_ALGO_STEPS;
     dataflow_args[15] = NUM_TILES;
-    dataflow_args[16] = NUM_TILES / TOTAL_NODES; // tiles per node
-    for (int i = 0; i < 8; i++)
-    {
+    dataflow_args[16] = NUM_TILES / TOTAL_NODES;  // tiles per node
+    for (int i = 0; i < 8; i++) {
         dataflow_args[17 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
@@ -223,7 +196,7 @@ int main(int argc, char **argv)
     std::vector<uint32_t> compute_args(7 + 2 * SWING_ALGO_STEPS);
     compute_args[0] = SWING_ALGO_STEPS;
     compute_args[5] = NUM_TILES;
-    compute_args[6] = NUM_TILES / TOTAL_NODES; // tiles per node
+    compute_args[6] = NUM_TILES / TOTAL_NODES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel;
@@ -238,45 +211,35 @@ int main(int argc, char **argv)
     int node_position, node_other_position, message_pass_depth, recv_node, comm_partner_idx;
 
     /*create kernels for each core*/
-    for (int core_i = 0; core_i < core_array.size(); core_i++)
-    {
+    for (int core_i = 0; core_i < core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(core_array[core_i]);
         dataflow_args[10] = (uint32_t)physical_core.x;
         dataflow_args[11] = (uint32_t)physical_core.y;
-        dataflow_args[12] = (uint32_t)core_i; // Added core_i
+        dataflow_args[12] = (uint32_t)core_i;  // Added core_i
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
         compute_args[3] = (uint32_t)core_i;
-        if (core_array[core_i].x % 2 == 0)
-        {
+        if (core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = src_1_dram_buffer->address();
-            dataflow_args[2] = src_1_dram_noc_x;
-            dataflow_args[3] = src_1_dram_noc_y;
-        }
-        else
-        {
+            dataflow_args[2] = src_1_bank_id;
+        } else {
             dataflow_args[0] = src_0_dram_buffer->address();
-            dataflow_args[2] = src_0_dram_noc_x;
-            dataflow_args[3] = src_0_dram_noc_y;
+            dataflow_args[2] = src_0_bank_id;
         }
 
         /* set block indexes to 0 */
-        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++)
-        {
+        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
             dataflow_args[25 + 2 * SWING_ALGO_STEPS + i] = 0;
         }
-        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++)
-        {
+        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
             compute_args[7 + i] = 0;
         }
 
-        horizontal_step = true; // Start calcs on hrz step
-        if (!SWING_VERSION)
-        {
+        horizontal_step = true;  // Start calcs on hrz step
+        if (!SWING_VERSION) {
             /*Recursive doubling algo partner node calculations*/
             message_pass_depth = 1;
-            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++)
-            {
+            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++) {
                 comm_partner_idx = get_comm_partner_recdub_2D(
                     core_i, algo_step, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
 
@@ -285,23 +248,17 @@ int main(int argc, char **argv)
                 dataflow_args[17 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[18 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t *blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
-                if (comm_partner_idx < 32)
-                {
+                uint32_t* blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
-                }
-                else
-                {
+                } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t *blocks_to_recv = &compute_args[7 + 2 * algo_step];
-                if (core_i < 32)
-                {
+                uint32_t* blocks_to_recv = &compute_args[7 + 2 * algo_step];
+                if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
-                }
-                else
-                {
+                } else {
                     *(blocks_to_recv + 1) = *(blocks_to_recv + 1) | (1 << (core_i - 32));
                 }
 
@@ -328,12 +285,9 @@ int main(int argc, char **argv)
                     message_pass_depth,
                     dummy_step_directions);
             }
-        }
-        else
-        {
+        } else {
             /*Swing communication partner calculations*/
-            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++)
-            {
+            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++) {
                 comm_partner_idx =
                     get_comm_partner_swing_2D(core_i, algo_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
 
@@ -342,23 +296,17 @@ int main(int argc, char **argv)
                 dataflow_args[17 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[18 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t *blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
-                if (comm_partner_idx < 32)
-                {
+                uint32_t* blocks_to_send = &dataflow_args[25 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
-                }
-                else
-                {
+                } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
-                uint32_t *blocks_to_recv = &compute_args[7 + 2 * algo_step];
-                if (core_i < 32)
-                {
+                uint32_t* blocks_to_recv = &compute_args[7 + 2 * algo_step];
+                if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
-                }
-                else
-                {
+                } else {
                     *(blocks_to_recv + 1) = *(blocks_to_recv + 1) | (1 << (core_i - 32));
                 }
 
@@ -408,8 +356,7 @@ int main(int argc, char **argv)
                 .compile_args = compute_args});
         SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
     }
-    if (RUN_KERNEL)
-    {
+    if (RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
         // DumpDeviceProfileResults(device, program);
@@ -426,33 +373,32 @@ int main(int argc, char **argv)
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
 
     int last_matching_index = 0;
-    float error = 32.0;
-    for (size_t i = 0; i < num_els * 2; i++)
-    {
+    float error = (float)ERROR;
+    float max_error = 0.0f;
+    int max_error_index = 0;
+    for (size_t i = 0; i < num_els * 2; i++) {
         trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
                                      (float)(TOTAL_NODES / 2));
-        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float()))
-        {
+        if (all_match && (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > error)) {
             printf("Mismatch at index %zu:\n", i);
             printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
             printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
             printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
             all_match = false;
-        }
-        else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float())
-        {
+        } else if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) <= error) {
             last_matching_index = i;
             num_matches++;
+        } else {
+            if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > max_error) {
+                max_error = fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float());
+                max_error_index = i;
+            }
         }
     }
 
-    if (all_match)
-    {
+    if (all_match) {
         printf("All values match!\n");
-    }
-    else
-    {
+    } else {
         /* Print actual and expected results*/
         printf("Total matches: %d\n", num_matches);
         printf(
@@ -475,12 +421,22 @@ int main(int argc, char **argv)
             "Expected last result (nocast) = %d, and after casting %d\n",
             output,
             (int)trgt_vec_b16[2 * num_els - 1].to_float());
+        printf("Max error: %f\n", max_error);
+        printf(
+            "Max error index: %d and vals %f and %f\n",
+            max_error_index,
+            result_vec_b16[max_error_index].to_float(),
+            trgt_vec_b16[max_error_index].to_float());
+        printf(
+            "Max error index +10: %d and vals %f and %f\n",
+            max_error_index + 10,
+            result_vec_b16[max_error_index + 10].to_float(),
+            trgt_vec_b16[max_error_index + 10].to_float());
     }
     CloseDevice(device);
 }
 
-int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES)
-{
+int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int row = node / SIDE_LENGTH;
     int col = node % SIDE_LENGTH;
     step = step / 2;
@@ -489,51 +445,36 @@ int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE
     int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
 
     int comm_partner;
-    if (horizontal_step)
-    {
-        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist); // can return -ve number
-        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0)
-        {
+    if (horizontal_step) {
+        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
+        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
             comm_partner += SIDE_LENGTH;
-        }
-        else if (comm_partner / SIDE_LENGTH > row)
-        {
+        } else if (comm_partner / SIDE_LENGTH > row) {
             comm_partner -= SIDE_LENGTH;
         }
-    }
-    else
-    {
+    } else {
         comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
-        if (comm_partner < 0)
-        {
+        if (comm_partner < 0) {
             comm_partner += TOTAL_NODES;
-        }
-        else if (comm_partner >= TOTAL_NODES)
-        {
+        } else if (comm_partner >= TOTAL_NODES) {
             comm_partner -= TOTAL_NODES;
         }
     }
-    return comm_partner; // will  loop round  to  always be in  range
+    return comm_partner;  // will  loop round  to  always be in  range
 }
 
 void get_swing_block_comm_indexes(
-    int node, int step, uint32_t *blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES)
-{
+    int node, int step, uint32_t* blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int num_steps = (int)log2((double)TOTAL_NODES);
-    if (step >= num_steps)
-    {
+    if (step >= num_steps) {
         return;
     }
-    for (int s = step; s < num_steps; s++)
-    {
+    for (int s = step; s < num_steps; s++) {
         int peer = get_comm_partner_swing_2D(node, s, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
         // blocks[peer] = 1;
-        if (peer < 32)
-        {
+        if (peer < 32) {
             *blocks = *blocks | (1 << peer);
-        }
-        else
-        {
+        } else {
             *(blocks + 1) = *(blocks + 1) | (1 << (peer - 32));
         }
         // step_directions = sending_SE ? (step_directions | (1 << algo_step)) : (step_directions & ~(1 <<
@@ -549,9 +490,8 @@ int get_comm_partner_recdub_2D(
     int recdub_step,
     bool horizontal_step,
     int message_pass_depth,
-    uint32_t &step_directions,
-    int SIDE_LENGTH)
-{
+    uint32_t& step_directions,
+    int SIDE_LENGTH) {
     int row = node / SIDE_LENGTH;
     int col = node % SIDE_LENGTH;
     int node_position = horizontal_step ? col : row;
@@ -568,28 +508,22 @@ int get_comm_partner_recdub_2D(
 void get_recdub_block_comm_indexes(
     int node,
     int step,
-    uint32_t *blocks,
+    uint32_t* blocks,
     bool horizontal_step,
     int SIDE_LENGTH,
     int TOTAL_NODES,
     int message_pass_depth,
-    uint32_t &step_directions)
-{
+    uint32_t& step_directions) {
     int num_steps = (int)log2((double)TOTAL_NODES);
-    if (step >= num_steps)
-    {
+    if (step >= num_steps) {
         return;
     }
-    for (int s = step; s < num_steps; s++)
-    {
+    for (int s = step; s < num_steps; s++) {
         int peer =
             get_comm_partner_recdub_2D(node, s, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
-        if (peer < 32)
-        {
+        if (peer < 32) {
             *blocks = *blocks | (1 << peer);
-        }
-        else
-        {
+        } else {
             *(blocks + 1) = *(blocks + 1) | (1 << (peer - 32));
         }
 
@@ -602,44 +536,30 @@ void get_recdub_block_comm_indexes(
 }
 
 // Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y)
-{
-    if (node_x % 2 == 0)
-    {
-        if (node_y % 2 == 0)
-        {                    // node 0,0
-            return 0b110011; // Binary: 110011 (true, true, false, false, true, true)
+uint32_t get_SE(int node_x, int node_y) {
+    if (node_x % 2 == 0) {
+        if (node_y % 2 == 0) {  // node 0,0
+            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
+        } else {                // node 0,1
+            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
         }
-        else
-        {                    // node 0,1
-            return 0b011001; // Binary: 100110 (true, false, false, true, true, false)
-        }
-    }
-    else
-    { // node 1,0
-        if (node_y % 2 == 0)
-        {
-            return 0b100110; // Binary: 011001 (false, true, true, false, false, true)
-        }
-        else
-        {                    // node 1,1
-            return 0b001100; // Binary: 001100 (false, false, true, true, false, false)
+    } else {  // node 1,0
+        if (node_y % 2 == 0) {
+            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
+        } else {              // node 1,1
+            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
         }
     }
 }
 
-int highest_power_of_two(int value)
-{
-    if (value >= 8)
-    {
+int highest_power_of_two(int value) {
+    if (value >= 8) {
         return 8;
     }
-    if (value >= 4)
-    {
+    if (value >= 4) {
         return 4;
     }
-    if (value >= 2)
-    {
+    if (value >= 2) {
         return 2;
     }
     return 1;
