@@ -37,7 +37,7 @@ void MAIN {
     cb_pop_front(cb_id_local, num_tiles);
 
     bool SE, recv_block;
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 5; j++) {
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
