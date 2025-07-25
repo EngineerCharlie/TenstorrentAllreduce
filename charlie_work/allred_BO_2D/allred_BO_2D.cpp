@@ -8,7 +8,7 @@
 #include <array>
 #include <cmath>  // For std::log2
 #include <cstdint>
-#include "hostdevcommon/profiler_common.h"
+// #include "hostdevcommon/profiler_common.h"
 #include "allred_helper.hpp"
 
 using namespace tt;
@@ -26,135 +26,19 @@ std::string uint32_to_binary_string(uint32_t value) {
 }
 
 int main(int argc, char** argv) {
-    /* Silicon accelerator setup */
     IDevice* device = CreateDevice(0);
 
-    /* Setup program to execute along with its buffers and kernels to use */
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
 
-    /*Assign input args*/
-    bool SWING_VERSION = true;
-    if (argc >= 2 && std::stoi(argv[1]) == 1) {
-        SWING_VERSION = true;
-    } else {
-        SWING_VERSION = false;
-    }
+    int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
+    CoreRange cores({0, 0}, {SIDE_LENGTH - 1, SIDE_LENGTH - 1});
 
-    bool RUN_KERNEL = false;
-    if (argc >= 3 && std::stoi(argv[2]) == 1) {
-        RUN_KERNEL = true;
-    }
-
-    int SIDE_LENGTH;
-    if (argc >= 4) {
-        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[3]));
-    } else {
-        SIDE_LENGTH = 1;
-    }
-    uint32_t TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
-
-    int RND_SRC = 0;
-    if (argc >= 5) {
-        RND_SRC = std::stoi(argv[4]);
-    }
-
-    int NUM_TILES = 1;
-    if (argc >= 6) {
-        NUM_TILES = std::stoi(argv[5]);
-    }
-    NUM_TILES = NUM_TILES * TOTAL_NODES;
-
-    int ERROR = 1;
-    if (argc >= 7) {
-        ERROR = std::stoi(argv[6]);
-    }
-
-    /*Setup core array (full grid or subsection)*/
-    uint32_t SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
-    CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {SIDE_LENGTH - 1, SIDE_LENGTH - 1};
-    CoreRange cores(start_core, end_core);
-
-    std::vector<CoreCoord> core_array(TOTAL_NODES);
-    for (uint32_t i = 0; i < core_array.size(); i++) {
-        core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
-    }
-
-    /* Use L1 circular buffers to set input and output buffers that the compute engine will use */
-    uint32_t num_data_tiles = NUM_TILES;
-    uint32_t num_recv_tiles = NUM_TILES;
-    constexpr uint32_t num_semaphore_tiles = 1;
-    constexpr uint32_t semaphore_tile_size = 32;
-    uint32_t single_tile_size = 2048;
-    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
-
-    constexpr uint32_t cb_index_compute = CBIndex::c_0;
-    CircularBufferConfig cb_config_compute =
-        CircularBufferConfig(semaphore_tile_size * num_semaphore_tiles, {{cb_index_compute, data_format}})
-            .set_page_size(cb_index_compute, semaphore_tile_size);
-    CBHandle cb_compute = tt_metal::CreateCircularBuffer(program, cores, cb_config_compute);
-
-    constexpr uint32_t cb_index_NW = CBIndex::c_1;
-    CircularBufferConfig cb_config_NW =
-        CircularBufferConfig(semaphore_tile_size * num_semaphore_tiles, {{cb_index_NW, data_format}})
-            .set_page_size(cb_index_NW, semaphore_tile_size);
-    CBHandle cb_NW = tt_metal::CreateCircularBuffer(program, cores, cb_config_NW);
-
-    constexpr uint32_t cb_index_SE = CBIndex::c_2;
-    CircularBufferConfig cb_config_SE =
-        CircularBufferConfig(semaphore_tile_size * num_semaphore_tiles, {{cb_index_SE, data_format}})
-            .set_page_size(cb_index_SE, semaphore_tile_size);
-    CBHandle cb_SE = tt_metal::CreateCircularBuffer(program, cores, cb_config_SE);
-
-    constexpr uint32_t cb_index_recv = CBIndex::c_3;
-    CircularBufferConfig cb_config_recv =
-        CircularBufferConfig(num_recv_tiles * single_tile_size, {{cb_index_recv, data_format}})
-            .set_page_size(cb_index_recv, single_tile_size);
-    CBHandle cb_recv = tt_metal::CreateCircularBuffer(program, cores, cb_config_recv);
-
-    constexpr uint32_t cb_index_local = CBIndex::c_16;
-    CircularBufferConfig cb_config_local =
-        CircularBufferConfig(num_data_tiles * single_tile_size, {{cb_index_local, data_format}})
-            .set_page_size(cb_index_local, single_tile_size);
-    CBHandle cb_local = tt_metal::CreateCircularBuffer(program, cores, cb_config_local);
-
-    /*Setup dram to pass data to/from cores*/
-    tt_metal::InterleavedBufferConfig dram_config{
-        .device = device,
-        .size = single_tile_size * NUM_TILES,
-        .page_size = single_tile_size * NUM_TILES,
-        .buffer_type = tt_metal::BufferType::DRAM};
-
-    std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
-
-    auto src_0_dram_noc_coord = 0;  // src_0_dram_buffer->noc_coordinates();
-    auto src_1_dram_noc_coord = 0;  // src_1_dram_buffer->noc_coordinates();
-    auto dst_dram_noc_coord = 0;    // dst_dram_buffer->noc_coordinates();
-    uint32_t src_0_bank_id = 0;     // src_0_dram_noc_coord.x;
-    uint32_t src_1_bank_id = 0;     // src_1_dram_noc_coord.x;
-    uint32_t dst_bank_id = 0;       // dst_dram_noc_coord.x;
-
-    /* Create source data and write to DRAM */
-    std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
-    std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
-    std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
-    int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
-    if (RND_SRC < 0) {
-        src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
-        src_vec_1 = src_vec_0;
-    } else {
-        src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC);
-        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * num_data_tiles, 100, RND_SRC + 1);
-    }
-
-    EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
-    EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
+    // Initialize the allreduce  setup
+    AllredSetup arStp(argc, argv, device, cq, program, cores, SIDE_LENGTH, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(14 + 2 * SWING_ALGO_STEPS + 8 + 2 * SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(14 + 2 * arStp.SWING_ALGO_STEPS + 8 + 2 * arStp.SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
     6: num steps
@@ -168,20 +52,20 @@ int main(int argc, char** argv) {
     26-33: semaphores for each step
     34-45: block indexes to send at each step
     */
-    dataflow_args[1] = dst_dram_buffer->address();
-    dataflow_args[4] = dst_bank_id;
-    dataflow_args[6] = SWING_ALGO_STEPS;
-    dataflow_args[12] = NUM_TILES;
-    dataflow_args[13] = NUM_TILES / TOTAL_NODES;  // tiles per node
+    dataflow_args[1] = arStp.dst_dram_buffer->address();
+    dataflow_args[4] = arStp.dst_bank_id;
+    dataflow_args[6] = arStp.SWING_ALGO_STEPS;
+    dataflow_args[12] = arStp.NUM_TILES;
+    dataflow_args[13] = arStp.NUM_TILES / arStp.TOTAL_NODES;  // tiles per node
     for (int i = 0; i < 8; i++) {
-        dataflow_args[14 + 2 * SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
+        dataflow_args[14 + 2 * arStp.SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
 
     /*Compute kernel arg initialization*/
-    std::vector<uint32_t> compute_args(6 + 2 * SWING_ALGO_STEPS);
-    compute_args[0] = SWING_ALGO_STEPS;
-    compute_args[4] = NUM_TILES;
-    compute_args[5] = NUM_TILES / TOTAL_NODES;  // tiles per node
+    std::vector<uint32_t> compute_args(6 + 2 * arStp.SWING_ALGO_STEPS);
+    compute_args[0] = arStp.SWING_ALGO_STEPS;
+    compute_args[4] = arStp.NUM_TILES;
+    compute_args[5] = arStp.NUM_TILES / arStp.TOTAL_NODES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel;
@@ -196,43 +80,43 @@ int main(int argc, char** argv) {
     int node_position, node_other_position, message_pass_depth, recv_node, comm_partner_idx;
 
     /*create kernels for each core*/
-    for (int core_i = 0; core_i < core_array.size(); core_i++) {
-        physical_core = device->worker_core_from_logical_core(core_array[core_i]);
+    for (int core_i = 0; core_i < arStp.core_array.size(); core_i++) {
+        physical_core = device->worker_core_from_logical_core(arStp.core_array[core_i]);
         dataflow_args[7] = (uint32_t)physical_core.x;
         dataflow_args[8] = (uint32_t)physical_core.y;
         dataflow_args[9] = (uint32_t)core_i;  // Added core_i
         compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
-        if (core_array[core_i].x % 2 == 0) {
-            dataflow_args[0] = src_1_dram_buffer->address();
-            dataflow_args[2] = src_1_bank_id;
+        if (arStp.core_array[core_i].x % 2 == 0) {
+            dataflow_args[0] = arStp.src_1_dram_buffer->address();
+            dataflow_args[2] = arStp.src_1_bank_id;
         } else {
-            dataflow_args[0] = src_0_dram_buffer->address();
-            dataflow_args[2] = src_0_bank_id;
+            dataflow_args[0] = arStp.src_0_dram_buffer->address();
+            dataflow_args[2] = arStp.src_0_bank_id;
         }
 
         /* set block indexes to 0 */
-        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
-            dataflow_args[22 + 2 * SWING_ALGO_STEPS + i] = 0;
+        for (int i = 0; i < 2 * arStp.SWING_ALGO_STEPS; i++) {
+            dataflow_args[22 + 2 * arStp.SWING_ALGO_STEPS + i] = 0;
         }
-        for (int i = 0; i < 2 * SWING_ALGO_STEPS; i++) {
+        for (int i = 0; i < 2 * arStp.SWING_ALGO_STEPS; i++) {
             compute_args[6 + i] = 0;
         }
 
         horizontal_step = true;  // Start calcs on hrz step
-        if (!SWING_VERSION) {
+        if (!arStp.SWING_VERSION) {
             /*Recursive doubling algo partner node calculations*/
             message_pass_depth = 1;
-            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++) {
+            for (int algo_step = 0; algo_step < arStp.SWING_ALGO_STEPS; algo_step++) {
                 comm_partner_idx = get_comm_partner_recdub_2D(
                     core_i, algo_step, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
 
-                logical_core = core_array[comm_partner_idx];
+                logical_core = arStp.core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * arStp.SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
@@ -255,7 +139,7 @@ int main(int argc, char** argv) {
                     blocks_to_send,
                     horizontal_step,
                     SIDE_LENGTH,
-                    TOTAL_NODES,
+                    arStp.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
 
@@ -265,22 +149,22 @@ int main(int argc, char** argv) {
                     blocks_to_recv,
                     horizontal_step,
                     SIDE_LENGTH,
-                    TOTAL_NODES,
+                    arStp.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
             }
         } else {
             /*Swing communication partner calculations*/
-            for (int algo_step = 0; algo_step < SWING_ALGO_STEPS; algo_step++) {
+            for (int algo_step = 0; algo_step < arStp.SWING_ALGO_STEPS; algo_step++) {
                 comm_partner_idx =
-                    get_comm_partner_swing_2D(core_i, algo_step, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+                    get_comm_partner_swing_2D(core_i, algo_step, horizontal_step, SIDE_LENGTH, arStp.TOTAL_NODES);
 
-                logical_core = core_array[comm_partner_idx];
+                logical_core = arStp.core_array[comm_partner_idx];
                 physical_core = device->worker_core_from_logical_core(logical_core);
                 dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
-                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * SWING_ALGO_STEPS + 2 * algo_step];
+                uint32_t* blocks_to_send = &dataflow_args[22 + 2 * arStp.SWING_ALGO_STEPS + 2 * algo_step];
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
@@ -297,11 +181,11 @@ int main(int argc, char** argv) {
                 horizontal_step = !horizontal_step;
 
                 get_swing_block_comm_indexes(
-                    comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+                    comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, arStp.TOTAL_NODES);
                 get_swing_block_comm_indexes(
-                    core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
+                    core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, arStp.TOTAL_NODES);
             }
-            step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
+            step_directions = get_SE(arStp.core_array[core_i].x, arStp.core_array[core_i].y);
         }
 
         dataflow_args[11] = step_directions;
@@ -313,9 +197,9 @@ int main(int argc, char** argv) {
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
-            core_array[core_i],
+            arStp.core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
-        SetRuntimeArgs(program, dataflow_1_kernel, core_array[core_i], dataflow_args);
+        SetRuntimeArgs(program, dataflow_1_kernel, arStp.core_array[core_i], dataflow_args);
 
         /*NW Kernel*/
         dataflow_args[10] = (uint32_t)false;
@@ -323,32 +207,33 @@ int main(int argc, char** argv) {
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/dataflow/"
             "dataflow_kernel.cpp",
-            core_array[core_i],
+            arStp.core_array[core_i],
             DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
-        SetRuntimeArgs(program, dataflow_0_kernel, core_array[core_i], dataflow_args);
+        SetRuntimeArgs(program, dataflow_0_kernel, arStp.core_array[core_i], dataflow_args);
 
         /* compute kernel */
         compute_kernel = CreateKernel(
             program,
             "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/allred_BO_2D/kernels/compute/"
             "compute_kernel.cpp",
-            core_array[core_i],
+            arStp.core_array[core_i],
             ComputeConfig{
                 .math_fidelity = MathFidelity::HiFi4,
                 .fp32_dest_acc_en = false,
                 .math_approx_mode = false,
                 .compile_args = compute_args});
-        SetRuntimeArgs(program, compute_kernel, core_array[core_i], compute_args);
+        SetRuntimeArgs(program, compute_kernel, arStp.core_array[core_i], compute_args);
     }
-    if (RUN_KERNEL) {
+    if (arStp.RUN_KERNEL) {
         EnqueueProgram(cq, program, false);
         Finish(cq);
         tt_metal::detail::DumpDeviceProfileResults(device);
     }
-    /* Read in result into a host vector */
-    EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
-    validate_result_vector(result_vec, src_vec_0, src_vec_1, num_els, ERROR, TOTAL_NODES);
+    /* Read in result into a host vector */
+    std::vector<uint32_t> result_vec;
+    EnqueueReadBuffer(cq, arStp.dst_dram_buffer, result_vec, true);
+    validate_result_vector(result_vec, arStp.src_vec_0, arStp.src_vec_1, arStp.num_els, arStp.ERROR, arStp.TOTAL_NODES);
 
     CloseDevice(device);
 }

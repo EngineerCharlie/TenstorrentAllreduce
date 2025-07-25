@@ -13,9 +13,6 @@
 using namespace tt;
 using namespace tt::tt_metal;
 
-int get_comm_partner_swing_2D(int, int, bool, int, int);
-int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
-
 std::string uint32_to_binary_string(uint32_t value) {
     std::string result(32, '0');
     for (int i = 0; i < 32; i++) {

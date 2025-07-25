@@ -25,6 +25,7 @@ int highest_power_of_two(int);
 uint32_t get_SE(int, int);
 
 int get_comm_partner_swing_2D(int, int, bool, int, int);
+
 int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
 
 #ifndef ALLRED_HELPER_HPP
@@ -32,18 +33,15 @@ int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
 class AllredSetup {
 public:
     // Public member variables
-    IDevice* device;
-    CommandQueue& cq;
-    Program program;
     bool SWING_VERSION;
     bool RUN_KERNEL;
     int RND_SRC;
     int NUM_TILES;
+    int TOTAL_NUM_TILES;
     int ERROR;
     int num_els;
     uint32_t TOTAL_NODES;
     uint32_t SWING_ALGO_STEPS;
-    CoreRange cores;
     std::vector<CoreCoord> core_array;
     std::shared_ptr<tt::tt_metal::Buffer> src_0_dram_buffer;
     std::shared_ptr<tt::tt_metal::Buffer> src_1_dram_buffer;
@@ -58,10 +56,13 @@ public:
     uint32_t dst_bank_id = 0;       // dst_dram_noc_coord.x;
 
     // Constructor to initialize the setup
-    AllredSetup(int argc, char** argv, int SIDE_LENGTH);
-
-    // Helper functions
-    std::vector<uint32_t> create_random_vector(int size, int max_value, int seed);
-    std::vector<uint32_t> create_constant_vector(int size, float value);
+    AllredSetup(int argc, 
+    char** argv, 
+    IDevice* device, 
+    CommandQueue& cq, 
+    Program& program, 
+    CoreRange cores, 
+    int SIDE_LENGTH,
+    bool large_buffer);
 };
 #endif // ALLRED_HELPER_HPP

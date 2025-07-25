@@ -17,7 +17,6 @@ void validate_result_vector(
     size_t num_els,
     float ERROR,
     uint32_t total_nodes) {
-    
     bool all_match = true;
     int num_matches = 0;
 
@@ -173,11 +172,15 @@ int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE
     return comm_partner;  // will  loop round  to  always be in  range
 }
 
-AllredSetup::AllredSetup(int argc, char** argv, int SIDE_LENGTH)
-    : device(CreateDevice(0)), 
-    cq(device->command_queue()), 
-    program(CreateProgram()),
-    cores(CoreCoord{0, 0}, CoreCoord{SIDE_LENGTH - 1, SIDE_LENGTH - 1})
+AllredSetup::AllredSetup(
+    int argc,
+    char** argv,
+    IDevice* device,
+    CommandQueue& cq,
+    Program& program,
+    CoreRange cores,
+    int SIDE_LENGTH, 
+    bool large_buffer)
 {
     // Assign input args
     SWING_VERSION = false;
@@ -190,21 +193,40 @@ AllredSetup::AllredSetup(int argc, char** argv, int SIDE_LENGTH)
         RUN_KERNEL = true;
     }
 
-    SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
     RND_SRC = (argc >= 5) ? std::stoi(argv[4]) : 0;
 
     NUM_TILES = (argc >= 6) ? std::stoi(argv[5]) : 1;
     ERROR = (argc >= 7) ? std::stoi(argv[6]) : 1;
 
     TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
+    NUM_TILES = large_buffer ? NUM_TILES * TOTAL_NODES : NUM_TILES;
     SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
-    CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {SIDE_LENGTH - 1, SIDE_LENGTH - 1};
 
     core_array.resize(TOTAL_NODES);
     for (uint32_t i = 0; i < core_array.size(); i++) {
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
+
+    constexpr uint32_t num_semaphore_tiles = 1;
+    constexpr uint32_t semaphore_tile_size = 32;
+    constexpr uint32_t cb_tile_size = 2048;
+    constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
+
+    uint32_t num_data_tiles = NUM_TILES;
+    uint32_t num_recv_tiles = NUM_TILES;
+
+    // Helper lambda for CB creation
+    auto create_cb = [&](uint32_t index, uint32_t size, uint32_t page_size) {
+        return tt_metal::CreateCircularBuffer(
+            program, cores, CircularBufferConfig(size, {{index, data_format}}).set_page_size(index, page_size));
+    };
+
+    // Create circular buffers
+    CBHandle cb_compute = create_cb(CBIndex::c_0, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
+    CBHandle cb_NW = create_cb(CBIndex::c_1, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
+    CBHandle cb_SE = create_cb(CBIndex::c_2, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
+    CBHandle cb_recv = create_cb(CBIndex::c_3, num_recv_tiles * cb_tile_size, cb_tile_size);
+    CBHandle cb_local = create_cb(CBIndex::c_16, num_data_tiles * cb_tile_size, cb_tile_size);
 
     // DRAM setup
     uint32_t single_tile_size = 2048;
@@ -212,8 +234,7 @@ AllredSetup::AllredSetup(int argc, char** argv, int SIDE_LENGTH)
         .device = device,
         .size = single_tile_size * NUM_TILES,
         .page_size = single_tile_size * NUM_TILES,
-        .buffer_type = tt_metal::BufferType::DRAM
-    };
+        .buffer_type = tt_metal::BufferType::DRAM};
 
     src_0_dram_buffer = CreateBuffer(dram_config);
     src_1_dram_buffer = CreateBuffer(dram_config);
