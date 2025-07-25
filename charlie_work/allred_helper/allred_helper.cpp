@@ -172,7 +172,7 @@ int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE
     return comm_partner;  // will  loop round  to  always be in  range
 }
 
-AllredSetup::AllredSetup(
+AllredConfig::AllredConfig(
     int argc,
     char** argv,
     IDevice* device,
@@ -229,7 +229,7 @@ AllredSetup::AllredSetup(
     CBHandle cb_local = create_cb(CBIndex::c_16, num_data_tiles * cb_tile_size, cb_tile_size);
 
     // DRAM setup
-    uint32_t single_tile_size = 2048;
+    single_tile_size = 2048;
     tt_metal::InterleavedBufferConfig dram_config{
         .device = device,
         .size = single_tile_size * NUM_TILES,
@@ -253,3 +253,53 @@ AllredSetup::AllredSetup(
     EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 }
+
+KernelHandle CreateDataflowKernel(
+    Program& program,
+    const CoreCoord& core,
+    std::vector<uint32_t>& args,
+    bool is_SE,
+    const std::string& kernel_base_dir)
+{
+    auto processor = is_SE ? DataMovementProcessor::RISCV_1 : DataMovementProcessor::RISCV_0;
+    auto noc       = is_SE ? NOC::RISCV_1_default : NOC::RISCV_0_default;
+
+    std::string kernel_path = "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/" 
+        + kernel_base_dir 
+        + "/kernels/dataflow_kernel.cpp";
+
+    auto kernel = CreateKernel(
+        program,
+        kernel_path,
+        core,
+        DataMovementConfig{.processor = processor, .noc = noc});
+
+    SetRuntimeArgs(program, kernel, core, args);
+    return kernel;
+}
+
+
+KernelHandle CreateComputeKernel(
+    Program& program,
+    const CoreCoord& core,
+    const std::vector<uint32_t>& compute_args,
+    const std::string& kernel_base_dir)
+{
+    std::string kernel_path = "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/" 
+        + kernel_base_dir 
+        + "/kernels/compute_kernel.cpp";
+
+    auto kernel = CreateKernel(
+        program,
+        kernel_path,
+        core,
+        ComputeConfig{
+            .math_fidelity = MathFidelity::HiFi4,
+            .fp32_dest_acc_en = false,
+            .math_approx_mode = false,
+            .compile_args = compute_args});
+
+    SetRuntimeArgs(program, kernel, core, compute_args);
+    return kernel;
+}
+

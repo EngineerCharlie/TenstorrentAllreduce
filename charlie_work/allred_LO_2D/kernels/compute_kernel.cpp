@@ -44,13 +44,11 @@ void MAIN {
             // add vectors
             for (uint32_t tile_num = 0; tile_num < num_tiles; tile_num++) {
                 tile_regs_acquire();
-                // TODO: Do 8 tile registers at once
                 add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
                 tile_regs_commit();
 
                 tile_regs_wait();
                 pack_tile(tile_num % 8, cb_id_local, tile_num);  // i must be lower than 8
-                // TODO: Do 8 tile registers at once
                 tile_regs_release();
             }
 

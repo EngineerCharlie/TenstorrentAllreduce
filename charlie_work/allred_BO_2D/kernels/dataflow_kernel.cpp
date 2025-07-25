@@ -112,7 +112,7 @@ void kernel_main() {
     bool direction_SE, send_block;
     uint32_t num_syncs = 16;  // Peak at 16, 32 causes hanging
 
-    for (uint32_t j = 0; j < 5; j++) { // # repeats of algorithm to get accurate timings
+    for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i

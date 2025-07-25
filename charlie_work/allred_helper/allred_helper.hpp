@@ -3,6 +3,7 @@
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/bfloat16.hpp>
+#include <tt-metalium/tt_metal.hpp>
 #include <vector>
 #include <cstdint>
 #include <cmath>
@@ -28,9 +29,22 @@ int get_comm_partner_swing_2D(int, int, bool, int, int);
 
 int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
 
+KernelHandle CreateComputeKernel(
+    Program&,
+    const CoreCoord&,
+    const std::vector<uint32_t>&,
+    const std::string&);
+
+KernelHandle CreateDataflowKernel(
+    Program&,
+    const CoreCoord&,
+    std::vector<uint32_t>&,
+    bool,
+    const std::string&);
+
 #ifndef ALLRED_HELPER_HPP
 #define ALLRED_HELPER_HPP
-class AllredSetup {
+class AllredConfig {
 public:
     // Public member variables
     bool SWING_VERSION;
@@ -48,15 +62,17 @@ public:
     std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer;
     std::vector<uint32_t> src_vec_0;
     std::vector<uint32_t> src_vec_1;
+    std::vector<uint32_t> result_vec;
     uint32_t src_0_dram_noc_coord = 0;  // src_0_dram_buffer->noc_coordinates();
     uint32_t src_1_dram_noc_coord = 0;  // src_1_dram_buffer->noc_coordinates();
     uint32_t dst_dram_noc_coord = 0;    // dst_dram_buffer->noc_coordinates();
     uint32_t src_0_bank_id = 0;     // src_0_dram_noc_coord.x;
     uint32_t src_1_bank_id = 0;     // src_1_dram_noc_coord.x;
     uint32_t dst_bank_id = 0;       // dst_dram_noc_coord.x;
+    uint32_t single_tile_size;
 
     // Constructor to initialize the setup
-    AllredSetup(int argc, 
+    AllredConfig(int argc, 
     char** argv, 
     IDevice* device, 
     CommandQueue& cq, 
@@ -64,5 +80,13 @@ public:
     CoreRange cores, 
     int SIDE_LENGTH,
     bool large_buffer);
+
+    void RunProgram(CommandQueue& cq, Program& program, IDevice* device) const {
+        if (RUN_KERNEL) {
+            EnqueueProgram(cq, program, false);
+            Finish(cq);
+            tt_metal::detail::DumpDeviceProfileResults(device);
+        }
+    }
 };
 #endif // ALLRED_HELPER_HPP
