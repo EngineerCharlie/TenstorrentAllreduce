@@ -1,0 +1,234 @@
+#include "allred_helper.hpp"
+#include <iostream>
+#include <cmath>
+#include <tt-metalium/host_api.hpp>
+#include <tt-metalium/device.hpp>
+#include <tt-metalium/bfloat16.hpp>
+#include <array>
+#include <cstdint>
+
+using namespace tt;
+using namespace tt::tt_metal;
+
+void validate_result_vector(
+    const std::vector<uint32_t>& result_vec,
+    const std::vector<uint32_t>& src_vec_0,
+    const std::vector<uint32_t>& src_vec_1,
+    size_t num_els,
+    float ERROR,
+    uint32_t total_nodes) {
+    
+    bool all_match = true;
+    int num_matches = 0;
+
+    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
+    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
+    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);  // reused buffer
+
+    int last_matching_index = 0;
+    float error = static_cast<float>(ERROR);
+    float max_error = 0.0f;
+    int max_error_index = 0;
+
+    for (size_t i = 0; i < num_els * 2; i++) {
+        trgt_vec_b16[i] = static_cast<bfloat16>(
+            (src_vec_0_b16[i].to_float() + src_vec_1_b16[i].to_float()) * static_cast<float>(total_nodes / 2));
+
+        float actual = result_vec_b16[i].to_float();
+        float expected = trgt_vec_b16[i].to_float();
+        float diff = std::fabs(actual - expected);
+
+        if (all_match && diff > error) {
+            printf("Mismatch at index %zu:\n", i);
+            printf("  Expected: %d\n", static_cast<int>(expected));
+            printf("  Actual  : %d\n", static_cast<int>(actual));
+            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
+            all_match = false;
+        } else if (diff <= error) {
+            last_matching_index = static_cast<int>(i);
+            num_matches++;
+        } else {
+            if (diff > max_error) {
+                max_error = diff;
+                max_error_index = static_cast<int>(i);
+            }
+        }
+    }
+
+    if (all_match) {
+        printf("All values match!\n");
+    } else {
+        printf("Total matches: %d\n", num_matches);
+        printf(
+            "Last match at index %d: %d\n\n",
+            last_matching_index,
+            static_cast<int>(result_vec_b16[last_matching_index].to_float()));
+        printf("Result (nocast) = %d, casted = %d\n", result_vec[0], static_cast<int>(result_vec_b16[0].to_float()));
+
+        uint32_t output = pack_two_bfloat16_into_uint32({trgt_vec_b16[0], trgt_vec_b16[1]});
+        printf("Expected (nocast) = %d, casted = %d\n", output, static_cast<int>(trgt_vec_b16[0].to_float()));
+
+        printf(
+            "Actual last result (nocast) = %d, casted = %d\n",
+            static_cast<int>(result_vec[num_els - 1]),
+            static_cast<int>(result_vec_b16[2 * num_els - 1].to_float()));
+
+        output = pack_two_bfloat16_into_uint32({trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]});
+        printf(
+            "Expected last result (nocast) = %d, casted = %d\n",
+            output,
+            static_cast<int>(trgt_vec_b16[2 * num_els - 1].to_float()));
+
+        printf("Max error: %f\n", max_error);
+        printf(
+            "Max error index: %d, values %f vs %f\n",
+            max_error_index,
+            result_vec_b16[max_error_index].to_float(),
+            trgt_vec_b16[max_error_index].to_float());
+
+        if (max_error_index + 10 < static_cast<int>(trgt_vec_b16.size())) {
+            printf(
+                "Max error index +10: %d, values %f vs %f\n",
+                max_error_index + 10,
+                result_vec_b16[max_error_index + 10].to_float(),
+                trgt_vec_b16[max_error_index + 10].to_float());
+        }
+    }
+}
+
+int highest_power_of_two(int value) {
+    if (value >= 8) {
+        return 8;
+    }
+    if (value >= 4) {
+        return 4;
+    }
+    if (value >= 2) {
+        return 2;
+    }
+    return 1;
+}
+
+uint32_t get_SE(int node_x, int node_y) {
+    if (node_x % 2 == 0) {
+        if (node_y % 2 == 0) {  // node 0,0
+            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
+        } else {                // node 0,1
+            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
+        }
+    } else {  // node 1,0
+        if (node_y % 2 == 0) {
+            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
+        } else {              // node 1,1
+            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
+        }
+    }
+}
+
+int get_comm_partner_recdub_2D(
+    int node,
+    int recdub_step,
+    bool horizontal_step,
+    int message_pass_depth,
+    uint32_t& step_directions,
+    int SIDE_LENGTH) {
+    int row = node / SIDE_LENGTH;
+    int col = node % SIDE_LENGTH;
+    int node_position = horizontal_step ? col : row;
+    int node_other_position = !horizontal_step ? col : row;
+
+    bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
+    step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 << recdub_step));
+
+    int recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
+    return horizontal_step ? recv_node + node_other_position * SIDE_LENGTH
+                           : recv_node * SIDE_LENGTH + node_other_position;
+}
+
+int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
+    int row = node / SIDE_LENGTH;
+    int col = node % SIDE_LENGTH;
+    step = step / 2;
+
+    // straight line distnce
+    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
+
+    int comm_partner;
+    if (horizontal_step) {
+        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
+        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
+            comm_partner += SIDE_LENGTH;
+        } else if (comm_partner / SIDE_LENGTH > row) {
+            comm_partner -= SIDE_LENGTH;
+        }
+    } else {
+        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
+        if (comm_partner < 0) {
+            comm_partner += TOTAL_NODES;
+        } else if (comm_partner >= TOTAL_NODES) {
+            comm_partner -= TOTAL_NODES;
+        }
+    }
+    return comm_partner;  // will  loop round  to  always be in  range
+}
+
+AllredSetup::AllredSetup(int argc, char** argv, int SIDE_LENGTH)
+    : device(CreateDevice(0)), 
+    cq(device->command_queue()), 
+    program(CreateProgram()),
+    cores(CoreCoord{0, 0}, CoreCoord{SIDE_LENGTH - 1, SIDE_LENGTH - 1})
+{
+    // Assign input args
+    SWING_VERSION = false;
+    if (argc >= 2 && std::stoi(argv[1]) == 1) {
+        SWING_VERSION = true;
+    }
+
+    RUN_KERNEL = false;
+    if (argc >= 3 && std::stoi(argv[2]) == 1) {
+        RUN_KERNEL = true;
+    }
+
+    SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
+    RND_SRC = (argc >= 5) ? std::stoi(argv[4]) : 0;
+
+    NUM_TILES = (argc >= 6) ? std::stoi(argv[5]) : 1;
+    ERROR = (argc >= 7) ? std::stoi(argv[6]) : 1;
+
+    TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
+    SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
+    CoreCoord start_core = {0, 0};
+    CoreCoord end_core = {SIDE_LENGTH - 1, SIDE_LENGTH - 1};
+
+    core_array.resize(TOTAL_NODES);
+    for (uint32_t i = 0; i < core_array.size(); i++) {
+        core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
+    }
+
+    // DRAM setup
+    uint32_t single_tile_size = 2048;
+    tt_metal::InterleavedBufferConfig dram_config{
+        .device = device,
+        .size = single_tile_size * NUM_TILES,
+        .page_size = single_tile_size * NUM_TILES,
+        .buffer_type = tt_metal::BufferType::DRAM
+    };
+
+    src_0_dram_buffer = CreateBuffer(dram_config);
+    src_1_dram_buffer = CreateBuffer(dram_config);
+    dst_dram_buffer = CreateBuffer(dram_config);
+
+    // Create source data and write to DRAM
+    num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
+    if (RND_SRC < 0) {
+        src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * NUM_TILES, 1.0f);
+        src_vec_1 = src_vec_0;
+    } else {
+        src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * NUM_TILES, 100, RND_SRC);
+        src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * NUM_TILES, 100, RND_SRC + 1);
+    }
+
+    EnqueueWriteBuffer(cq, src_0_dram_buffer, src_vec_0, true);
+    EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
+}
