@@ -2,7 +2,6 @@ set(PROGRAMMING_EXAMPLES_SRCS
     # ${CMAKE_CURRENT_SOURCE_DIR}/add_2_integers_in_compute2/add_2_integers_in_compute2.cpp
     # ${CMAKE_CURRENT_SOURCE_DIR}/all_red_swing_1D/all_red_swing_1D.cpp # <------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_BO_2D/allred_BO_2D.cpp # <------------------
-    ${CMAKE_CURRENT_SOURCE_DIR}/allred_BO2_2D/allred_BO2_2D.cpp # <------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_LO_2D/allred_LO_2D.cpp # <------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/allred_mem_2D/allred_mem_2D.cpp # <------------------
     # ${CMAKE_CURRENT_SOURCE_DIR}/circular_buffer_tile_addition/circular_buffer_tile_addition.cpp
@@ -19,17 +18,13 @@ set(PROGRAMMING_EXAMPLES_SRCS
 )
 
 include(${PROJECT_SOURCE_DIR}/cmake/helper_functions.cmake)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/allred_helper)
+
 CREATE_PGM_EXAMPLES_EXE("${PROGRAMMING_EXAMPLES_SRCS}" "charlie_work")
-# CREATE_PGM_EXAMPLES_EXE("${PROGRAMMING_EXAMPLES_SRCS}" "") # no subdir, output binaries straight to build/programming_examples
 
-# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/profiler)
-# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/contributed)
-# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/charlie_work)
-
-# add_custom_target(
-#     programming_examples
-#     DEPENDS
-#         profiler_examples
-#         contributed
-#         ${PROGRAMMING_EXAMPLES_TEST_TARGETS}
-# )
+foreach(EXE_NAME allred_BO_2D allred_LO_2D allred_mem_2D)
+    target_sources(${EXE_NAME}
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/allred_helper/allred_helper.cpp
+    )
+endforeach()

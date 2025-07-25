@@ -4,6 +4,7 @@
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/bfloat16.hpp>
+#include "allred_helper.hpp"
 #include <array>
 #include <cmath>  // For std::log2
 #include <cstdint>
@@ -11,12 +12,14 @@
 using namespace tt;
 using namespace tt::tt_metal;
 
-int ceil_div(int, int);
 int get_comm_partner_2D(int, int, bool, int, int);
-uint32_t get_SE(int, int);
-int highest_power_of_two(int);
 
 int main(int argc, char** argv) {
+
+    int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
+    
+    // AllredSetup allredSetup(argc, argv, SIDE_LENGTH);
+
     /* Silicon accelerator setup */
     IDevice* device = CreateDevice(0);
 
@@ -35,12 +38,6 @@ int main(int argc, char** argv) {
         RUN_KERNEL = true;
     }
 
-    int SIDE_LENGTH;
-    if (argc >= 4) {
-        SIDE_LENGTH = highest_power_of_two(std::stoi(argv[3]));
-    } else {
-        SIDE_LENGTH = 1;
-    }
     int RND_SRC = 0;
     if (argc >= 5) {
         RND_SRC = std::stoi(argv[4]);
@@ -51,9 +48,9 @@ int main(int argc, char** argv) {
         NUM_TILES = std::stoi(argv[5]);
     }
 
-    int ERROR= 1;
+    int ERROR = 1;
     if (argc >= 7) {
-        ERROR= std::stoi(argv[6]);
+        ERROR = std::stoi(argv[6]);
     }
 
     /*Setup core array (full grid or subsection)*/
@@ -121,16 +118,12 @@ int main(int argc, char** argv) {
     auto src_1_dram_noc_coord = 0;  // src_1_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = 0;    // dst_dram_buffer->noc_coordinates();
     uint32_t src_0_bank_id = 0;     // src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = 0;  // src_0_dram_noc_coord.y;
     uint32_t src_1_bank_id = 0;     // src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = 0;  // src_1_dram_noc_coord.y;
     uint32_t dst_bank_id = 0;       // dst_dram_noc_coord.x;
-    uint32_t dst_dram_noc_y = 0;    // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
     std::vector<uint32_t> src_vec_1;   //(single_tile_size, 14);
-    std::vector<uint32_t> result_vec;  //(single_tile_size, 14);
     int num_els = single_tile_size * NUM_TILES / sizeof(uint32_t);
     if (RND_SRC < 0) {
         src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * num_data_tiles, 1.0f);
@@ -145,10 +138,7 @@ int main(int argc, char** argv) {
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(12 + 8 + 2 * SWING_ALGO_STEPS);
-    // dataflow_args[0] = src_0_dram_buffer->address();
     dataflow_args[1] = dst_dram_buffer->address();
-    // dataflow_args[2] = src_0_dram_noc_x;
-    // dataflow_args[3] = src_0_dram_noc_y;
     dataflow_args[4] = dst_bank_id;
     dataflow_args[6] = SWING_ALGO_STEPS;
     dataflow_args[11] = NUM_TILES;
@@ -267,64 +257,13 @@ int main(int argc, char** argv) {
         // DumpDeviceProfileResults(device, program);
     }
     /* Read in result into a host vector */
+    std::vector<uint32_t> result_vec;
     std::vector<bfloat16> result_vec1;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec1, true);
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
-    bool all_match = true;
-    int num_matches = 0;
-
-    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
-    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-    int last_matching_index = 0;
-    float error = (float)ERROR;
-    for (size_t i = 0; i < num_els * 2; i++) {
-        trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
-                                     (float)(TOTAL_NODES / 2));
-        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
-            printf("Mismatch at index %zu:\n", i);
-            printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
-            printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
-            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
-            all_match = false;
-        } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
-            last_matching_index = i;
-            num_matches++;
-        }
-    }
-
-    if (all_match) {
-        printf("All values match!\n");
-    } else {
-        /* Print actual and expected results*/
-        printf("Total matches: %d\n", num_matches);
-        printf(
-            "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
-        printf(
-            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
-
-        uint32_t output =
-            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
-        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
-
-        printf(
-            "  Actual last result (nocast) = %d, and after casting %d\n",
-            (int)result_vec[num_els - 1],
-            (int)result_vec_b16[2 * num_els - 1].to_float());
-
-        output = pack_two_bfloat16_into_uint32(
-            std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
-        printf(
-            "Expected last result (nocast) = %d, and after casting %d\n",
-            output,
-            (int)trgt_vec_b16[2 * num_els - 1].to_float());
-    }
+    validate_result_vector(result_vec, src_vec_0, src_vec_1, num_els, ERROR, TOTAL_NODES);
     CloseDevice(device);
 }
-
-int ceil_div(int a, int b) { return (a + b - 1) / b; }
 
 int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int row = node / SIDE_LENGTH;
@@ -351,34 +290,4 @@ int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGT
         }
     }
     return comm_partner;  // will  loop round  to  always be in  range
-}
-
-// Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
-    if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
-    }
-}
-
-int highest_power_of_two(int value) {
-    if (value >= 8) {
-        return 8;
-    }
-    if (value >= 4) {
-        return 4;
-    }
-    if (value >= 2) {
-        return 2;
-    }
-    return 1;
 }

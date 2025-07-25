@@ -8,16 +8,13 @@
 #include <cmath>  // For std::log2
 #include <cstdint>
 #include "hostdevcommon/profiler_common.h"
+#include "allred_helper.hpp"
 
 using namespace tt;
 using namespace tt::tt_metal;
 
 int get_comm_partner_swing_2D(int, int, bool, int, int);
-void get_swing_block_comm_indexes(int, int, uint32_t*, bool, int, int);
 int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
-void get_recdub_block_comm_indexes(int, int, uint32_t*, bool, int, int, int, uint32_t&);
-uint32_t get_SE(int, int);
-int highest_power_of_two(int);
 
 std::string uint32_to_binary_string(uint32_t value) {
     std::string result(32, '0');
@@ -264,26 +261,6 @@ int main(int argc, char** argv) {
 
                 message_pass_depth = horizontal_step ? message_pass_depth : 2 * message_pass_depth;
                 horizontal_step = !horizontal_step;
-
-                get_recdub_block_comm_indexes(
-                    comm_partner_idx,
-                    algo_step + 1,
-                    blocks_to_send,
-                    horizontal_step,
-                    SIDE_LENGTH,
-                    TOTAL_NODES,
-                    message_pass_depth,
-                    dummy_step_directions);
-
-                get_recdub_block_comm_indexes(
-                    core_i,
-                    algo_step + 1,
-                    blocks_to_recv,
-                    horizontal_step,
-                    SIDE_LENGTH,
-                    TOTAL_NODES,
-                    message_pass_depth,
-                    dummy_step_directions);
             }
         } else {
             /*Swing communication partner calculations*/
@@ -311,11 +288,6 @@ int main(int argc, char** argv) {
                 }
 
                 horizontal_step = !horizontal_step;
-
-                get_swing_block_comm_indexes(
-                    comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-                get_swing_block_comm_indexes(
-                    core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
         }
@@ -364,203 +336,7 @@ int main(int argc, char** argv) {
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
-    bool all_match = true;
-    int num_matches = 0;
-
-    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
-    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-
-    int last_matching_index = 0;
-    float error = (float)ERROR;
-    float max_error = 0.0f;
-    int max_error_index = 0;
-    for (size_t i = 0; i < num_els * 2; i++) {
-        trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
-                                     (float)(TOTAL_NODES / 2));
-        if (all_match && (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > error)) {
-            printf("Mismatch at index %zu:\n", i);
-            printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
-            printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
-            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
-            all_match = false;
-        } else if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) <= error) {
-            last_matching_index = i;
-            num_matches++;
-        } else {
-            if (fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float()) > max_error) {
-                max_error = fabs(result_vec_b16[i].to_float() - trgt_vec_b16[i].to_float());
-                max_error_index = i;
-            }
-        }
-    }
-
-    if (all_match) {
-        printf("All values match!\n");
-    } else {
-        /* Print actual and expected results*/
-        printf("Total matches: %d\n", num_matches);
-        printf(
-            "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
-        printf(
-            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
-
-        uint32_t output =
-            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
-        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
-
-        printf(
-            "  Actual last result (nocast) = %d, and after casting %d\n",
-            (int)result_vec[num_els - 1],
-            (int)result_vec_b16[2 * num_els - 1].to_float());
-
-        output = pack_two_bfloat16_into_uint32(
-            std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
-        printf(
-            "Expected last result (nocast) = %d, and after casting %d\n",
-            output,
-            (int)trgt_vec_b16[2 * num_els - 1].to_float());
-        printf("Max error: %f\n", max_error);
-        printf(
-            "Max error index: %d and vals %f and %f\n",
-            max_error_index,
-            result_vec_b16[max_error_index].to_float(),
-            trgt_vec_b16[max_error_index].to_float());
-        printf(
-            "Max error index +10: %d and vals %f and %f\n",
-            max_error_index + 10,
-            result_vec_b16[max_error_index + 10].to_float(),
-            trgt_vec_b16[max_error_index + 10].to_float());
-    }
+    validate_result_vector(result_vec, src_vec_0, src_vec_1, num_els, ERROR, TOTAL_NODES);
     CloseDevice(device);
 }
 
-int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    step = step / 2;
-
-    // straight line distnce
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-
-    int comm_partner;
-    if (horizontal_step) {
-        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
-        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
-            comm_partner += SIDE_LENGTH;
-        } else if (comm_partner / SIDE_LENGTH > row) {
-            comm_partner -= SIDE_LENGTH;
-        }
-    } else {
-        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
-        if (comm_partner < 0) {
-            comm_partner += TOTAL_NODES;
-        } else if (comm_partner >= TOTAL_NODES) {
-            comm_partner -= TOTAL_NODES;
-        }
-    }
-    return comm_partner;  // will  loop round  to  always be in  range
-}
-
-void get_swing_block_comm_indexes(
-    int node, int step, uint32_t* blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
-    int num_steps = (int)log2((double)TOTAL_NODES);
-    if (step >= num_steps) {
-        return;
-    }
-    for (int s = step; s < num_steps; s++) {
-        int peer = get_comm_partner_swing_2D(node, s, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-        // blocks[peer] = 1;
-        if (peer < 32) {
-            *blocks = *blocks | (1 << peer);
-        } else {
-            *(blocks + 1) = *(blocks + 1) | (1 << (peer - 32));
-        }
-        // step_directions = sending_SE ? (step_directions | (1 << algo_step)) : (step_directions & ~(1 <<
-        // algo_step));
-        horizontal_step = !horizontal_step;
-        get_swing_block_comm_indexes(peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-    }
-    return;
-}
-
-int get_comm_partner_recdub_2D(
-    int node,
-    int recdub_step,
-    bool horizontal_step,
-    int message_pass_depth,
-    uint32_t& step_directions,
-    int SIDE_LENGTH) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    int node_position = horizontal_step ? col : row;
-    int node_other_position = !horizontal_step ? col : row;
-
-    bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
-    step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 << recdub_step));
-
-    int recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
-    return horizontal_step ? recv_node + node_other_position * SIDE_LENGTH
-                           : recv_node * SIDE_LENGTH + node_other_position;
-}
-
-void get_recdub_block_comm_indexes(
-    int node,
-    int step,
-    uint32_t* blocks,
-    bool horizontal_step,
-    int SIDE_LENGTH,
-    int TOTAL_NODES,
-    int message_pass_depth,
-    uint32_t& step_directions) {
-    int num_steps = (int)log2((double)TOTAL_NODES);
-    if (step >= num_steps) {
-        return;
-    }
-    for (int s = step; s < num_steps; s++) {
-        int peer =
-            get_comm_partner_recdub_2D(node, s, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
-        if (peer < 32) {
-            *blocks = *blocks | (1 << peer);
-        } else {
-            *(blocks + 1) = *(blocks + 1) | (1 << (peer - 32));
-        }
-
-        message_pass_depth = horizontal_step ? message_pass_depth : 2 * message_pass_depth;
-        horizontal_step = !horizontal_step;
-        get_recdub_block_comm_indexes(
-            peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES, message_pass_depth, step_directions);
-    }
-    return;
-}
-
-// Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
-    if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
-    }
-}
-
-int highest_power_of_two(int value) {
-    if (value >= 8) {
-        return 8;
-    }
-    if (value >= 4) {
-        return 4;
-    }
-    if (value >= 2) {
-        return 2;
-    }
-    return 1;
-}

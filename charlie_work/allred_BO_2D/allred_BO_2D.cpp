@@ -9,16 +9,13 @@
 #include <cmath>  // For std::log2
 #include <cstdint>
 #include "hostdevcommon/profiler_common.h"
+#include "allred_helper.hpp"
 
 using namespace tt;
 using namespace tt::tt_metal;
 
-int get_comm_partner_swing_2D(int, int, bool, int, int);
 void get_swing_block_comm_indexes(int, int, uint32_t*, bool, int, int);
-int get_comm_partner_recdub_2D(int, int, bool, int, uint32_t&, int);
 void get_recdub_block_comm_indexes(int, int, uint32_t*, bool, int, int, int, uint32_t&);
-uint32_t get_SE(int, int);
-int highest_power_of_two(int);
 
 std::string uint32_to_binary_string(uint32_t value) {
     std::string result(32, '0');
@@ -137,11 +134,8 @@ int main(int argc, char** argv) {
     auto src_1_dram_noc_coord = 0;  // src_1_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = 0;    // dst_dram_buffer->noc_coordinates();
     uint32_t src_0_bank_id = 0;     // src_0_dram_noc_coord.x;
-    uint32_t src_0_dram_noc_y = 0;  // src_0_dram_noc_coord.y;
     uint32_t src_1_bank_id = 0;     // src_1_dram_noc_coord.x;
-    uint32_t src_1_dram_noc_y = 0;  // src_1_dram_noc_coord.y;
     uint32_t dst_bank_id = 0;       // dst_dram_noc_coord.x;
-    uint32_t dst_dram_noc_y = 0;    // dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src_vec_0;   //(single_tile_size, 14);
@@ -176,7 +170,6 @@ int main(int argc, char** argv) {
     */
     dataflow_args[1] = dst_dram_buffer->address();
     dataflow_args[4] = dst_bank_id;
-    // dataflow_args[5] = dst_dram_noc_y;
     dataflow_args[6] = SWING_ALGO_STEPS;
     dataflow_args[12] = NUM_TILES;
     dataflow_args[13] = NUM_TILES / TOTAL_NODES;  // tiles per node
@@ -213,11 +206,9 @@ int main(int argc, char** argv) {
         if (core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = src_1_dram_buffer->address();
             dataflow_args[2] = src_1_bank_id;
-            // dataflow_args[3] = src_1_dram_noc_y;
         } else {
             dataflow_args[0] = src_0_dram_buffer->address();
             dataflow_args[2] = src_0_bank_id;
-            // dataflow_args[3] = src_0_dram_noc_y;
         }
 
         /* set block indexes to 0 */
@@ -277,16 +268,6 @@ int main(int argc, char** argv) {
                     TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
-
-                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                // printf(
-                //     "    Sending blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
-                // printf(z
-                //     "  Receiving blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
         } else {
             /*Swing communication partner calculations*/
@@ -319,16 +300,6 @@ int main(int argc, char** argv) {
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-
-                // printf("Recdub core %d Step %d:\n", core_i, algo_step);
-                // printf(
-                //     "    Sending blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_send[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_send[0]).c_str());
-                // printf(
-                //     "  Receiving blocks: [%s %s]\n",
-                //     uint32_to_binary_string(blocks_to_recv[1]).c_str(),
-                //     uint32_to_binary_string(blocks_to_recv[0]).c_str());
             }
             step_directions = get_SE(core_array[core_i].x, core_array[core_i].y);
         }
@@ -377,86 +348,9 @@ int main(int argc, char** argv) {
     /* Read in result into a host vector */
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
-    bool all_match = true;
-    int num_matches = 0;
+    validate_result_vector(result_vec, src_vec_0, src_vec_1, num_els, ERROR, TOTAL_NODES);
 
-    std::vector<bfloat16> result_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
-    std::vector<bfloat16> src_vec_0_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_0);
-    std::vector<bfloat16> src_vec_1_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-    std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);
-
-    int last_matching_index = 0;
-    float error = (float)ERROR;
-    for (size_t i = 0; i < num_els * 2; i++) {
-        trgt_vec_b16[i] = (bfloat16)(((float)src_vec_0_b16[i].to_float() + (float)src_vec_1_b16[i].to_float()) *
-                                     (float)(TOTAL_NODES / 2));
-        if (all_match && (result_vec_b16[i].to_float() > trgt_vec_b16[i].to_float() + error ||
-                          result_vec_b16[i].to_float() < trgt_vec_b16[i].to_float())) {
-            printf("Mismatch at index %zu:\n", i);
-            printf("  Expected: %d\n", (int)trgt_vec_b16[i].to_float());
-            printf("  Actual  : %d\n", (int)result_vec_b16[i].to_float());
-            printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
-            all_match = false;
-        } else if (trgt_vec_b16[i].to_float() == result_vec_b16[i].to_float()) {
-            last_matching_index = i;
-            num_matches++;
-        }
-    }
-
-    if (all_match) {
-        printf("All values match!\n");
-    } else {
-        /* Print actual and expected results*/
-        printf("Total matches: %d\n", num_matches);
-        printf(
-            "Last match at index %d: %d\n\n", last_matching_index, (int)result_vec_b16[last_matching_index].to_float());
-        printf(
-            "         Result (nocast) = %d, and after casting %d\n", result_vec[0], (int)result_vec_b16[0].to_float());
-
-        uint32_t output =
-            pack_two_bfloat16_into_uint32(std::pair<bfloat16, bfloat16>(trgt_vec_b16[0], trgt_vec_b16[1]));
-        printf("Expected result (nocast) = %d, and after casting %d\n", output, (int)trgt_vec_b16[0].to_float());
-
-        printf(
-            "  Actual last result (nocast) = %d, and after casting %d\n",
-            (int)result_vec[num_els - 1],
-            (int)result_vec_b16[2 * num_els - 1].to_float());
-
-        output = pack_two_bfloat16_into_uint32(
-            std::pair<bfloat16, bfloat16>(trgt_vec_b16[2 * num_els - 2], trgt_vec_b16[2 * num_els - 1]));
-        printf(
-            "Expected last result (nocast) = %d, and after casting %d\n",
-            output,
-            (int)trgt_vec_b16[2 * num_els - 1].to_float());
-    }
     CloseDevice(device);
-}
-
-int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    step = step / 2;
-
-    // straight line distnce
-    int dist = (int)((1 - (int)pow(-2, step + 1)) / 3);
-
-    int comm_partner;
-    if (horizontal_step) {
-        comm_partner = (node % 2 == 0) ? (node + dist) : (node - dist);  // can return -ve number
-        if (comm_partner / SIDE_LENGTH < row || comm_partner < 0) {
-            comm_partner += SIDE_LENGTH;
-        } else if (comm_partner / SIDE_LENGTH > row) {
-            comm_partner -= SIDE_LENGTH;
-        }
-    } else {
-        comm_partner = (row % 2 == 0) ? (node + SIDE_LENGTH * dist) : (node - SIDE_LENGTH * dist);
-        if (comm_partner < 0) {
-            comm_partner += TOTAL_NODES;
-        } else if (comm_partner >= TOTAL_NODES) {
-            comm_partner -= TOTAL_NODES;
-        }
-    }
-    return comm_partner;  // will  loop round  to  always be in  range
 }
 
 void get_swing_block_comm_indexes(
@@ -479,26 +373,6 @@ void get_swing_block_comm_indexes(
         get_swing_block_comm_indexes(peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
     }
     return;
-}
-
-int get_comm_partner_recdub_2D(
-    int node,
-    int recdub_step,
-    bool horizontal_step,
-    int message_pass_depth,
-    uint32_t& step_directions,
-    int SIDE_LENGTH) {
-    int row = node / SIDE_LENGTH;
-    int col = node % SIDE_LENGTH;
-    int node_position = horizontal_step ? col : row;
-    int node_other_position = !horizontal_step ? col : row;
-
-    bool sending_SE = node_position % (2 * message_pass_depth) < message_pass_depth;
-    step_directions = sending_SE ? (step_directions | (1 << recdub_step)) : (step_directions & ~(1 << recdub_step));
-
-    int recv_node = node_position + (sending_SE ? message_pass_depth : -message_pass_depth);
-    return horizontal_step ? recv_node + node_other_position * SIDE_LENGTH
-                           : recv_node * SIDE_LENGTH + node_other_position;
 }
 
 void get_recdub_block_comm_indexes(
@@ -529,34 +403,4 @@ void get_recdub_block_comm_indexes(
             peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES, message_pass_depth, step_directions);
     }
     return;
-}
-
-// Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
-    if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
-    }
-}
-
-int highest_power_of_two(int value) {
-    if (value >= 8) {
-        return 8;
-    }
-    if (value >= 4) {
-        return 4;
-    }
-    if (value >= 2) {
-        return 2;
-    }
-    return 1;
 }
