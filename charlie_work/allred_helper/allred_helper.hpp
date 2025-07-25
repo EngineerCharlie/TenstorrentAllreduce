@@ -81,12 +81,18 @@ public:
     int SIDE_LENGTH,
     bool large_buffer);
 
-    void RunProgram(CommandQueue& cq, Program& program, IDevice* device) const {
+    void RunProgram(CommandQueue& cq, Program& program, IDevice* device) {
         if (RUN_KERNEL) {
             EnqueueProgram(cq, program, false);
             Finish(cq);
             tt_metal::detail::DumpDeviceProfileResults(device);
         }
+
+        /* Read in result into a host vector */
+        EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
+        validate_result_vector(result_vec, src_vec_0, src_vec_1, num_els, ERROR, TOTAL_NODES);
+
+        CloseDevice(device);
     }
 };
 #endif // ALLRED_HELPER_HPP

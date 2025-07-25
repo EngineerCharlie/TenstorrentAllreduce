@@ -176,12 +176,6 @@ int main(int argc, char** argv) {
     }
     
     arCfg.RunProgram(cq, program, device);
-
-    /* Read in result into a host vector */
-    EnqueueReadBuffer(cq, arCfg.dst_dram_buffer, arCfg.result_vec, true);
-    validate_result_vector(arCfg.result_vec, arCfg.src_vec_0, arCfg.src_vec_1, arCfg.num_els, arCfg.ERROR, arCfg.TOTAL_NODES);
-
-    CloseDevice(device);
 }
 
 void get_swing_block_comm_indexes(

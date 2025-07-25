@@ -10,6 +10,10 @@
 using namespace tt;
 using namespace tt::tt_metal;
 
+#ifndef OVERRIDE_KERNEL_PREFIX
+#define OVERRIDE_KERNEL_PREFIX ""
+#endif
+
 void validate_result_vector(
     const std::vector<uint32_t>& result_vec,
     const std::vector<uint32_t>& src_vec_0,
@@ -264,8 +268,8 @@ KernelHandle CreateDataflowKernel(
     auto processor = is_SE ? DataMovementProcessor::RISCV_1 : DataMovementProcessor::RISCV_0;
     auto noc       = is_SE ? NOC::RISCV_1_default : NOC::RISCV_0_default;
 
-    std::string kernel_path = "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/" 
-        + kernel_base_dir 
+    std::string kernel_path = OVERRIDE_KERNEL_PREFIX "charlie_work/"
+        + kernel_base_dir
         + "/kernels/dataflow_kernel.cpp";
 
     auto kernel = CreateKernel(
@@ -285,7 +289,7 @@ KernelHandle CreateComputeKernel(
     const std::vector<uint32_t>& compute_args,
     const std::string& kernel_base_dir)
 {
-    std::string kernel_path = "/home/tenstorrent/tt-metal/tt_metal/programming_examples/charlie_work/" 
+    std::string kernel_path = OVERRIDE_KERNEL_PREFIX "charlie_work/"
         + kernel_base_dir 
         + "/kernels/compute_kernel.cpp";
 
