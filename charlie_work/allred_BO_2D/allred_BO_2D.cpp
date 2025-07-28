@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     AllredConfig arCfg(argc, argv, device, cq, program, cores, SIDE_LENGTH, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 2 * arCfg.SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 4 * arCfg.SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
     6: num steps
@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
     14-25: core x, y for each step
     26-33: semaphores for each step
     34-45: block indexes to send at each step
+    46-57: blocks to receive at each step
     */
     dataflow_args[1] = arCfg.dst_dram_buffer->address();
     dataflow_args[4] = arCfg.dst_bank_id;
@@ -127,6 +128,10 @@ int main(int argc, char** argv) {
                     arCfg.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
+
+                // Store the indexes of the blocks to be received in dataflow_args
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step + 1] =
                     compute_args[6 + 2 * algo_step + 1];
             }
         } else {
