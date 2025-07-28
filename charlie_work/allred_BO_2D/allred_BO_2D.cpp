@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
                     arCfg.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
+                    compute_args[6 + 2 * algo_step + 1];
             }
         } else {
             /*Swing communication partner calculations*/
@@ -159,6 +160,10 @@ int main(int argc, char** argv) {
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
+                    
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step + 1] =
+                    compute_args[6 + 2 * algo_step + 1];
             }
             step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
@@ -174,7 +179,7 @@ int main(int argc, char** argv) {
         dataflow_1_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, false,"allred_BO_2D"); // NW kernel
         compute_kernel = CreateComputeKernel(program, arCfg.core_array[core_i], compute_args,"allred_BO_2D");
     }
-    
+
     arCfg.RunProgram(cq, program, device);
 }
 

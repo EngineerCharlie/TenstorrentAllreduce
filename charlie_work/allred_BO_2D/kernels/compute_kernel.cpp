@@ -54,21 +54,21 @@ void MAIN {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
 
                 for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
-                     tile_num++) {
-                    tile_regs_acquire();
-                    cb_wait_front(cb_id_recv, 1); // Await blocks to be exchanged
-                    add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
-                    tile_regs_commit();
+                      tile_num++) {
+                    if (recv_block){
+                        cb_wait_front(cb_id_recv, 1); // Await blocks to be exchanged
+                        tile_regs_acquire();
+                        add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                        tile_regs_commit();
 
-                    tile_regs_wait();
-                    if (recv_block) { // Only part that can be skipped without hangs
+                        tile_regs_wait();
                         pack_tile(reg_index, cb_id_local);
+                        cb_pop_front(cb_id_recv, 1);
+                        tile_regs_release();
+                        reg_index = reg_index < 7 ? reg_index + 1 : 0; // Increment reg index
                     }
-                    cb_pop_front(cb_id_recv, 1);
-                    cb_push_back(cb_id_local, 1);
-                    tile_regs_release();
-
                     reg_index = reg_index < 7 ? reg_index + 1 : 0;  // Increment reg index
+                    cb_push_back(cb_id_local, 1);
                 }
             }
         }
