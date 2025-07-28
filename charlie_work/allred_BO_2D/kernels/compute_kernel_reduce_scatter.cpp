@@ -42,7 +42,7 @@ void MAIN {
     }
 
     bool SE, recv_block;
-    for (uint32_t j = 0; j < 1; j++) {  // # repeats of algorithm to get accurate timings
+    for (uint32_t j = 0; j < 5; j++) {  // # repeats of algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -80,11 +80,8 @@ void MAIN {
                 }
             }
         }
-        if (SE) {
-            cb_push_back(cb_id_SE, 1);
-        } else {
-            cb_push_back(cb_id_NW, 1);
-        }
+        cb_push_back(cb_id_SE, 1);
+        cb_push_back(cb_id_NW, 1);
     }
     DPRINT_MATH(DPRINT << "Compute done " << ENDL());
 }

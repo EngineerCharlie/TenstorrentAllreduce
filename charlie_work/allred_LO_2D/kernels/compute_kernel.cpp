@@ -22,11 +22,16 @@ void MAIN {
     cb_wait_front(cb_id_local, num_tiles);
 
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
-    add_tiles_init(cb_id_local, cb_id_recv, cb_id_local);
+    uint32_t operation = 0;
+    if (operation == 1) {
+        mul_tiles_init(cb_id_local, cb_id_recv);
+    } else {
+        add_tiles_init(cb_id_local, cb_id_recv, true);
+    }
 
     cb_pop_front(cb_id_local, num_tiles);
     bool SE;
-    for (uint32_t j = 0; j < 1; j++) {
+    for (uint32_t j = 0; j < 5; j++) {
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
@@ -44,7 +49,11 @@ void MAIN {
             // add vectors
             for (uint32_t tile_num = 0; tile_num < num_tiles; tile_num++) {
                 tile_regs_acquire();
-                add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                if (operation == 1) {
+                    mul_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                } else {
+                    add_tiles(cb_id_local, cb_id_recv, tile_num, tile_num, tile_num % 8);
+                }
                 tile_regs_commit();
 
                 tile_regs_wait();
