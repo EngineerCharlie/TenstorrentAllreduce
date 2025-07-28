@@ -115,17 +115,9 @@ int highest_power_of_two(int value) {
 
 uint32_t get_SE(int node_x, int node_y) {
     if (node_x % 2 == 0) {
-        if (node_y % 2 == 0) {  // node 0,0
-            return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)
-        } else {                // node 0,1
-            return 0b011001;    // Binary: 100110 (true, false, false, true, true, false)
-        }
-    } else {  // node 1,0
-        if (node_y % 2 == 0) {
-            return 0b100110;  // Binary: 011001 (false, true, true, false, false, true)
-        } else {              // node 1,1
-            return 0b001100;  // Binary: 001100 (false, false, true, true, false, false)
-        }
+        return node_y % 2 == 0 ? 0b110011 : 0b011001;
+    } else {
+        return node_y % 2 == 0 ? 0b100110 : 0b001100;
     }
 }
 
