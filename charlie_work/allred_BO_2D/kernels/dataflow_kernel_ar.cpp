@@ -11,9 +11,7 @@ void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
     uint32_t dst0_addr = get_arg_val<uint32_t>(1);
     uint32_t src0_bank_id = get_arg_val<uint32_t>(2);
-    // uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);
     uint32_t dst0_bank_id = get_arg_val<uint32_t>(4);
-    // uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
@@ -40,13 +38,13 @@ void kernel_main() {
 
     // setup circular buffers
     constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
-    constexpr uint32_t cb_id_NW = tt::CBIndex::c_1; // used as semaphore
-    constexpr uint32_t cb_id_SE = tt::CBIndex::c_2; // used as semaphore
-    constexpr uint32_t cb_id_recv = tt::CBIndex::c_3; // recieve buffer
-    constexpr uint32_t cb_id_local = tt::CBIndex::c_16; // Local data
+    constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;      // used as semaphore
+    constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;      // used as semaphore
+    constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;    // recieve buffer
+    constexpr uint32_t cb_id_local = tt::CBIndex::c_16;  // Local data
 
-    uint32_t cb_id_this; // Represents the semaphore for this core
-    uint32_t cb_id_that; // represents the semaphore for the other core
+    uint32_t cb_id_this;  // Represents the semaphore for this core
+    uint32_t cb_id_that;  // represents the semaphore for the other core
     if (this_core_SE) {
         cb_id_this = cb_id_SE;
         cb_id_that = cb_id_NW;
@@ -110,28 +108,30 @@ void kernel_main() {
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
-    uint32_t num_syncs = 16;  // Peak at 16, 32 causes hanging
-
-    for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+    uint32_t num_syncs = 4;  // Peak at 16, 32 causes hanging
+    DPRINT << "NOC loop starting" << ENDL();
+    for (uint32_t j = 0; j < 1; j++) {  // # repeats of algorithm to get accurate timings
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             uint32_t sync_index = 1;
-            
+
             uint32_t n_block_sync = total_nodes / num_syncs - 1;
             if (this_core_SE == direction_SE) {
+                DPRINT << "Scatter step " << i << ENDL();
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
 
-                dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
                 // await sem from compute, and ack that the array is ready
                 cb_wait_front(cb_id_this, 1);
+                DPRINT << "NOC waiting for cb lcl" << ENDL();
                 cb_wait_front(cb_id_local, num_tiles);
                 cb_pop_front(cb_id_this, 1);
 
                 // await first sem from comm partner
+                DPRINT << "NOC waiting for semaphore 0" << ENDL();
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
+                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 1);
 
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                     send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
@@ -139,7 +139,7 @@ void kernel_main() {
                         uint32_t offset = tile_block_size * n_block;
                         dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv + offset);
                         uint32_t tiles_to_send = 0;
-                        while (send_block && n_block < total_nodes) { // Send contiguous blocks
+                        while (send_block && n_block < total_nodes) {  // Send contiguous blocks
                             tiles_to_send++;
                             n_block++;
                             send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
@@ -156,22 +156,22 @@ void kernel_main() {
                 }
             } else {
                 // idle core monitores semaphore and pushes data to compute for greater parallelism
+                DPRINT << "NOC entering semaphore loop" << ENDL();
                 for (uint32_t n_block = 0; n_block < num_syncs; n_block++) {
                     noc_semaphore_wait_min(semaphore_1_ptr[0], j * num_syncs * algo_steps + i * num_syncs + sync_index);
                     cb_push_back(cb_id_recv, num_tiles / num_syncs);
                     cb_pop_front(cb_id_local, num_tiles / num_syncs);
                     sync_index++;
-                    DPRINT << "Sem 1 val = " << j * num_syncs * algo_steps + i * num_syncs + sync_index << ENDL();
                 }
+                DPRINT << "NOC exiting semaphore loop" << ENDL();
             }
         }
-        
         DPRINT << "Scatter finished" << ENDL();
 
         for (uint32_t i = algo_steps - 1; i >= 0; i--) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             if (this_core_SE == direction_SE) {
-                DPRINT << "Waiting CB" << ENDL();
+                DPRINT << "Scatter finished" << ENDL();
                 cb_wait_front(cb_id_this, 1);
                 cb_pop_front(cb_id_this, 1);
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
@@ -179,7 +179,6 @@ void kernel_main() {
 
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                DPRINT << "Waiting for semaphore 0" << ENDL();
                 noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 2);
 
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
@@ -198,9 +197,7 @@ void kernel_main() {
                 }
                 noc_async_write_barrier();
                 noc_semaphore_inc(dst_noc_semaphore_1, 1);
-                uint32_t sem_value = (j + 1) * num_syncs * algo_steps + j * algo_steps + (algo_steps - i);
-                DPRINT << "Semaphore 1 incremented waiting for " << sem_value << ENDL();
-                noc_semaphore_wait_min(semaphore_1_ptr[0], sem_value);
+                noc_semaphore_wait_min(semaphore_1_ptr[0], (j + 1) * num_syncs * algo_steps + j * algo_steps + i + 1);
                 if (i >= 0) {
                     bool next_direction_SE = (packed_direction_bools >> (i - 1)) & 1;
                     if (next_direction_SE == this_core_SE) {
@@ -211,9 +208,6 @@ void kernel_main() {
                 }
             }
         }
-
-        // cb_wait_front(cb_id_this, 1);
-        // cb_pop_front(cb_id_this, 1);
     }
     if (this_core_SE == direction_SE) {
         uint32_t offset = tile_block_size * this_core_i;

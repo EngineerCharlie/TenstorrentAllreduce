@@ -22,7 +22,7 @@ void MAIN {
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
 
-    uint64_t block_indexes[algo_steps]; // indexes of blocks to be exchanged
+    uint64_t block_indexes[algo_steps];  // indexes of blocks to be exchanged
 
     for (uint32_t i = 0; i < algo_steps; i++) {
         uint64_t low_bits = get_arg_val<uint32_t>(6 + 2 * i);
@@ -30,20 +30,25 @@ void MAIN {
         block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
-    cb_wait_front(cb_id_local, num_tiles); // Wait for dataflow to read data from dram
+    cb_wait_front(cb_id_local, num_tiles);  // Wait for dataflow to read data from dram
 
     // Initialize the compute cores
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
-    add_tiles_init(cb_id_local, cb_id_recv, true);
-    cb_pop_front(cb_id_local, num_tiles);
+    uint32_t operation = 0;
+    if (operation == 1) {
+        mul_tiles_init(cb_id_local, cb_id_recv);
+    } else {
+        add_tiles_init(cb_id_local, cb_id_recv, true);
+    }
 
     bool SE, recv_block;
-    for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+    for (uint32_t j = 0; j < 1; j++) {  // # repeats of algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {
+            DPRINT_MATH(DPRINT << "Compute step " << i << ENDL());
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
 
-            if (SE) { // Which core to activate
+            if (SE) {  // Which core to activate
                 cb_push_back(cb_id_SE, 1);
             } else {
                 cb_push_back(cb_id_NW, 1);
@@ -56,12 +61,16 @@ void MAIN {
                 for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
                      tile_num++) {
                     tile_regs_acquire();
-                    cb_wait_front(cb_id_recv, 1); // Await blocks to be exchanged
-                    add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                    cb_wait_front(cb_id_recv, 1);  // Await blocks to be exchanged
+                    if (operation == 1) {
+                        mul_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                    } else {
+                        add_tiles(cb_id_local, cb_id_recv, tile_num, 0, reg_index);
+                    }
                     tile_regs_commit();
 
                     tile_regs_wait();
-                    if (recv_block) { // Only part that can be skipped without hangs
+                    if (recv_block) {  // Only part that can be skipped without hangs
                         pack_tile(reg_index, cb_id_local);
                     }
                     cb_pop_front(cb_id_recv, 1);
