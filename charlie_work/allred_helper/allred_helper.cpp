@@ -218,7 +218,7 @@ AllredConfig::AllredConfig(
     };
 
     // Create circular buffers
-    CBHandle cb_compute = create_cb(CBIndex::c_0, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
+    CBHandle cb_compute = create_cb(CBIndex::c_0, 2*semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
     CBHandle cb_NW = create_cb(CBIndex::c_1, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
     CBHandle cb_SE = create_cb(CBIndex::c_2, semaphore_tile_size * num_semaphore_tiles, semaphore_tile_size);
     CBHandle cb_recv = create_cb(CBIndex::c_3, num_recv_tiles * cb_tile_size, cb_tile_size);

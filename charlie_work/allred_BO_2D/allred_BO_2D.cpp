@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     AllredConfig arCfg(argc, argv, device, cq, program, cores, SIDE_LENGTH, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 2 * arCfg.SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 4 * arCfg.SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
     6: num steps
@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
     14-25: core x, y for each step
     26-33: semaphores for each step
     34-45: block indexes to send at each step
+    46-57: blocks to receive at each step
     */
     dataflow_args[1] = arCfg.dst_dram_buffer->address();
     dataflow_args[4] = arCfg.dst_bank_id;
@@ -71,7 +72,7 @@ int main(int argc, char** argv) {
         }
 
         /* set block indexes to 0 */
-        for (int i = 0; i < 2 * arCfg.SWING_ALGO_STEPS; i++) {
+        for (int i = 0; i < 4 * arCfg.SWING_ALGO_STEPS; i++) {
             dataflow_args[22 + 2 * arCfg.SWING_ALGO_STEPS + i] = 0;
         }
         for (int i = 0; i < 2 * arCfg.SWING_ALGO_STEPS; i++) {
@@ -127,6 +128,12 @@ int main(int argc, char** argv) {
                     arCfg.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
+
+                // Store the indexes of the blocks to be received in dataflow_args
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step + 1] =
+                    compute_args[6 + 2 * algo_step + 1];
+                
             }
         } else {
             /*Swing communication partner calculations*/
@@ -159,6 +166,11 @@ int main(int argc, char** argv) {
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
+                    
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step + 1] =
+                    compute_args[6 + 2 * algo_step + 1];
+
             }
             step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
@@ -174,7 +186,7 @@ int main(int argc, char** argv) {
         dataflow_1_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, false,"allred_BO_2D"); // NW kernel
         compute_kernel = CreateComputeKernel(program, arCfg.core_array[core_i], compute_args,"allred_BO_2D");
     }
-    
+
     arCfg.RunProgram(cq, program, device);
 }
 

@@ -11,9 +11,7 @@ void kernel_main() {
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
     uint32_t dst0_addr = get_arg_val<uint32_t>(1);
     uint32_t src_0_bank_id = get_arg_val<uint32_t>(2);
-    uint32_t src0_dram_noc_y = get_arg_val<uint32_t>(3);  // unused
     uint32_t dst_bank_id = get_arg_val<uint32_t>(4);
-    uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);  // unused
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(11);
