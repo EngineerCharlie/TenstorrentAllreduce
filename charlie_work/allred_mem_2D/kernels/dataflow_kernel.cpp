@@ -130,7 +130,7 @@ void kernel_main() {
         dst_core_y,
         &num_syncs);
 
-    for (uint32_t j = 0; j < 5; j++) {
+    for (uint32_t j = 0; j < 1; j++) {
         DeviceZoneScopedN("ALL_RED_LOOP");
         {
             uint32_t write_offset = total_vector_size * this_core_i;

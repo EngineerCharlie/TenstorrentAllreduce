@@ -102,10 +102,10 @@ void kernel_main() {
 
     // read ublocks from src to local
     if (!this_core_SE) {
-        cb_reserve_back(cb_id_local, num_tiles);
+        // cb_reserve_back(cb_id_local, num_tiles);
         noc_async_read(src0_noc_addr, l1_write_addr_local, ublock_size_bytes_data * num_tiles);
         noc_async_read_barrier();
-        cb_push_back(cb_id_local, num_tiles);
+        // cb_push_back(cb_id_local, num_tiles);
     }
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
@@ -119,7 +119,8 @@ void kernel_main() {
             cb_push_back(cb_id_that, 1);
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
-            
+            DPRINT << "ALL_RED_LOOP passed cbs" << i << ENDL();
+
             uint32_t n_block_sync = total_nodes / num_syncs - 1;
             if (this_core_SE == direction_SE) {
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
@@ -128,12 +129,14 @@ void kernel_main() {
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
                 // await sem from compute, and ack that the array is ready
                 if (i!= 0){
-                    cb_wait_front(cb_id_local, num_tiles);
+                    cb_reserve_back(cb_id_local, num_tiles);
+                    // cb_wait_front(cb_id_local, num_tiles);
                 }
-
+                DPRINT << "ALL_RED_LOOP reserved cbs" << i << ENDL();
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
                 noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
+                DPRINT << "ALL_RED_LOOP passed sems" << i << ENDL();
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                     send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                     if (send_block) {
@@ -152,6 +155,7 @@ void kernel_main() {
                         // increment the the circular buffers, allowing computation to proceed
                         noc_async_write_barrier();
                         noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                        cb_push_back(cb_id_local, num_tiles / num_syncs);
                         n_block_sync = n_block_sync + (total_nodes / num_syncs);
                     }
                 }
@@ -160,7 +164,7 @@ void kernel_main() {
                 for (uint32_t n_block = 0; n_block < num_syncs; n_block++) {
                     noc_semaphore_wait_min(semaphore_1_ptr[0], j * num_syncs * algo_steps + i * num_syncs + n_block + 1);
                     cb_push_back(cb_id_recv, num_tiles / num_syncs);
-                    cb_pop_front(cb_id_local, num_tiles / num_syncs);
+                    // cb_pop_front(cb_id_local, num_tiles / num_syncs);
                 }
             }
         }
@@ -169,12 +173,11 @@ void kernel_main() {
         cb_pop_front(cb_id_this, 1);
     }
     if (this_core_SE == direction_SE) {
-        cb_wait_front(cb_id_local, num_tiles);
+        cb_reserve_back(cb_id_local, num_tiles);
         uint32_t offset = tile_block_size * this_core_i;
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local + offset, dst0_noc_addr, tile_block_size);
         noc_async_write_barrier();
-        cb_pop_front(cb_id_local, num_tiles);
         DPRINT << "NOC SE finished" << ENDL();
     } else {
         DPRINT << "NOC NW finished" << ENDL();

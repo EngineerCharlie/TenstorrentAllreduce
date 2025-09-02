@@ -27,7 +27,7 @@ if not os.path.exists(output_csv):
         writer.writerow(csv_header)
 
 # Iterate over workload combinations
-for run_num in range(15,20):
+for run_num in range(13,20):
     for mode in modes:
         if mode == "allred_BO_2D":
             swing_algos = swing_algo_LO_BO
