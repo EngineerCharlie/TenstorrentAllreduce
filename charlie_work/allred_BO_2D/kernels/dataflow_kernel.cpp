@@ -127,6 +127,7 @@ void kernel_main() {
 
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
                 // await sem from compute, and ack that the array is ready
+                cb_push_back(cb_id_that, 1);
                 cb_wait_front(cb_id_this, 1);
                 cb_pop_front(cb_id_this, 1);
                 DPRINT << "Direction cb " << ENDL();
@@ -160,8 +161,12 @@ void kernel_main() {
                         n_block_sync = n_block_sync + (total_nodes / num_syncs);
                     }
                 }
+                direction_SE = (packed_direction_bools >> i+1) & 1;
                 DPRINT << "Fin "<< ENDL();
             } else {
+                cb_push_back(cb_id_that, 1);
+                cb_wait_front(cb_id_this, 1);
+                cb_pop_front(cb_id_this, 1);
                 // idle core monitores semaphore and pushes data to compute for greater parallelism
                 for (uint32_t n_block = 0; n_block < num_syncs; n_block++) {
                     uint32_t sem_val = j * num_syncs * algo_steps + i * num_syncs + sync_index;
@@ -171,9 +176,12 @@ void kernel_main() {
                 }
             }
         }
-        
         DPRINT << "Scatter finished" << ENDL();
-        bool same_core = false;
+        cb_push_back(cb_id_that, 1);
+        cb_wait_front(cb_id_this, 1);
+        cb_pop_front(cb_id_this, 1);
+        bool same_core = (packed_direction_bools >> algo_steps-1) & this_core_SE;
+        DPRINT << "Gather started" << ENDL();
         for (uint32_t i = algo_steps - 1; i >= 0; i--) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             if (this_core_SE == direction_SE) {
@@ -220,10 +228,10 @@ void kernel_main() {
                 }
             }
         }
-
-        // cb_wait_front(cb_id_this, 1);
-        // cb_pop_front(cb_id_this, 1);
     }
+    cb_push_back(cb_id_that, 1);
+    cb_wait_front(cb_id_this, 1);
+    cb_pop_front(cb_id_this, 1);
     if (this_core_SE == direction_SE) {
         uint32_t offset = tile_block_size * this_core_i;
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);

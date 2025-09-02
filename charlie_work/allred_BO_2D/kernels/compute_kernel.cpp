@@ -36,20 +36,13 @@ void MAIN {
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init(cb_id_local, cb_id_recv, true);
     cb_pop_front(cb_id_local, num_tiles);
+    cb_push_back(cb_id_local, num_tiles);
 
     bool SE, recv_block;
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
-
-            if (SE) { // Which core to activate
-                DPRINT_MATH(DPRINT << "Push SE" << ENDL());
-                cb_push_back(cb_id_SE, 1);
-            } else {
-                DPRINT_MATH(DPRINT << "Push NW" << ENDL());
-                cb_push_back(cb_id_NW, 1);
-            }
 
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
@@ -73,11 +66,6 @@ void MAIN {
                     reg_index = reg_index < 7 ? reg_index + 1 : 0;  // Increment reg index
                 }
             }
-        }
-        if (SE) {
-            cb_push_back(cb_id_SE, 1);
-        } else {
-            cb_push_back(cb_id_NW, 1);
         }
     }
     DPRINT_MATH(DPRINT << "Compute done " << ENDL());
