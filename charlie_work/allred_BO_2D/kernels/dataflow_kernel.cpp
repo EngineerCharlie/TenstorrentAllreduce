@@ -110,9 +110,10 @@ void kernel_main() {
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
-    uint32_t num_syncs = 16;  // Peak at 16, 32 causes hanging
+    uint32_t num_syncs = 8;  // Peak at 16, 32 causes hanging
 
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+        // DPRINT << "Scatter starting" << ENDL();
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
@@ -120,19 +121,23 @@ void kernel_main() {
             
             uint32_t n_block_sync = total_nodes / num_syncs - 1;
             if (this_core_SE == direction_SE) {
+                DPRINT << "Step " <<(uint32_t) i << ENDL();
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
 
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
                 // await sem from compute, and ack that the array is ready
                 cb_wait_front(cb_id_this, 1);
-                cb_wait_front(cb_id_local, num_tiles);
                 cb_pop_front(cb_id_this, 1);
+                DPRINT << "Direction cb " << ENDL();
+                cb_wait_front(cb_id_local, num_tiles);
+                DPRINT << "Post cbs "<< ENDL();
 
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
+                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j);
 
+                DPRINT << "Post barriers "<< ENDL();
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                     send_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
                     if (send_block) {
@@ -151,35 +156,38 @@ void kernel_main() {
                         // increment the the circular buffers, allowing computation to proceed
                         noc_async_write_barrier();
                         noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                        cb_pop_front(cb_id_local, num_tiles / num_syncs);
                         n_block_sync = n_block_sync + (total_nodes / num_syncs);
                     }
                 }
+                DPRINT << "Fin "<< ENDL();
             } else {
                 // idle core monitores semaphore and pushes data to compute for greater parallelism
                 for (uint32_t n_block = 0; n_block < num_syncs; n_block++) {
-                    noc_semaphore_wait_min(semaphore_1_ptr[0], j * num_syncs * algo_steps + i * num_syncs + sync_index);
+                    uint32_t sem_val = j * num_syncs * algo_steps + i * num_syncs + sync_index;
+                    noc_semaphore_wait_min(semaphore_1_ptr[0], sem_val);
                     cb_push_back(cb_id_recv, num_tiles / num_syncs);
-                    cb_pop_front(cb_id_local, num_tiles / num_syncs);
                     sync_index++;
-                    DPRINT << "Sem 1 val = " << j * num_syncs * algo_steps + i * num_syncs + sync_index << ENDL();
                 }
             }
         }
         
         DPRINT << "Scatter finished" << ENDL();
-
+        bool same_core = false;
         for (uint32_t i = algo_steps - 1; i >= 0; i--) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             if (this_core_SE == direction_SE) {
-                DPRINT << "Waiting CB" << ENDL();
-                cb_wait_front(cb_id_this, 1);
-                cb_pop_front(cb_id_this, 1);
+                // DPRINT << "Waiting CB" << ENDL();
+                if (!same_core) {
+                    cb_wait_front(cb_id_this, 1);
+                    cb_pop_front(cb_id_this, 1);
+                }
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
 
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                DPRINT << "Waiting for semaphore 0" << ENDL();
+                // DPRINT << "Waiting for semaphore 0" << ENDL();
                 noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 2);
 
                 for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
@@ -198,13 +206,14 @@ void kernel_main() {
                 }
                 noc_async_write_barrier();
                 noc_semaphore_inc(dst_noc_semaphore_1, 1);
-                uint32_t sem_value = (j + 1) * num_syncs * algo_steps + j * algo_steps + (algo_steps - i);
-                DPRINT << "Semaphore 1 incremented waiting for " << sem_value << ENDL();
+                uint32_t sem_value = (j + 1) * num_syncs * algo_steps + j * algo_steps + (algo_steps - i)-1;
+                // DPRINT << "Semaphore 1 incremented waiting for " << sem_value << ENDL();
                 noc_semaphore_wait_min(semaphore_1_ptr[0], sem_value);
+                same_core = false;
                 if (i >= 0) {
                     bool next_direction_SE = (packed_direction_bools >> (i - 1)) & 1;
                     if (next_direction_SE == this_core_SE) {
-                        cb_push_back(cb_id_this, 1);
+                        same_core = true;
                     } else {
                         cb_push_back(cb_id_that, 1);
                     }

@@ -44,8 +44,10 @@ void MAIN {
             SE = (packed_bools >> i) & 1;  // Extract bit i
 
             if (SE) { // Which core to activate
+                DPRINT_MATH(DPRINT << "Push SE" << ENDL());
                 cb_push_back(cb_id_SE, 1);
             } else {
+                DPRINT_MATH(DPRINT << "Push NW" << ENDL());
                 cb_push_back(cb_id_NW, 1);
             }
 

@@ -203,7 +203,7 @@ AllredConfig::AllredConfig(
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
-    constexpr uint32_t num_semaphore_tiles = 1;
+    constexpr uint32_t num_semaphore_tiles = 4;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr uint32_t cb_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
