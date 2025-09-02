@@ -43,12 +43,6 @@ void MAIN {
             // Signal appropriate NOC core to exchange data with other core
             SE = (packed_bools >> i) & 1;  // Extract bit i
 
-            if (SE) { // Which core to activate
-                cb_push_back(cb_id_SE, 1);
-            } else {
-                cb_push_back(cb_id_NW, 1);
-            }
-
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
                 recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
@@ -67,13 +61,10 @@ void MAIN {
                     cb_pop_front(cb_id_recv, 1);
                     cb_push_back(cb_id_local, 1);
                     tile_regs_release();
-
                     reg_index = reg_index < 7 ? reg_index + 1 : 0;  // Increment reg index
                 }
             }
         }
-        cb_push_back(cb_id_SE, 1);
-        cb_push_back(cb_id_NW, 1);
     }
     DPRINT_MATH(DPRINT << "Compute done " << ENDL());
 }
