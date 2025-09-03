@@ -40,7 +40,7 @@ void MAIN {
     cb_reserve_back(cb_id_local, num_tiles);
     bool SE, recv_block;
     uint32_t offset = this_core_i * num_tiles_per_node;
-    for (uint32_t j = 0; j < 5; j++) {
+    for (uint32_t j = 0; j < 1; j++) {
         tile_regs_acquire();
         tile_regs_wait();
         copy_tile_to_dst_init_short(cb_id_local);

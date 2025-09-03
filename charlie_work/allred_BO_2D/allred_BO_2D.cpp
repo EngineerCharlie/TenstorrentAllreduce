@@ -11,13 +11,14 @@ int main(int argc, char** argv) {
     Program program = CreateProgram();
 
     int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
+    int PRINT_CORE = (argc >= 8) ? std::stoi(argv[7]) : 0;
     CoreRange cores({0, 0}, {SIDE_LENGTH - 1, SIDE_LENGTH - 1});
 
     // Initialize the allreduce parameters
     AllredConfig arCfg(argc, argv, device, cq, program, cores, SIDE_LENGTH, true);
 
     /*NOC kernel arg initialization*/
-    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 2 * arCfg.SWING_ALGO_STEPS);
+    std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 4 * arCfg.SWING_ALGO_STEPS);
     /*args:
     0-5 : src + dst dram
     6: num steps
@@ -32,6 +33,7 @@ int main(int argc, char** argv) {
     34-45: block indexes to send at each step
     */
     dataflow_args[1] = arCfg.dst_dram_buffer->address();
+    dataflow_args[3] = PRINT_CORE;
     dataflow_args[4] = arCfg.dst_bank_id;
     dataflow_args[6] = arCfg.SWING_ALGO_STEPS;
     dataflow_args[12] = arCfg.NUM_TILES;
@@ -127,6 +129,9 @@ int main(int argc, char** argv) {
                     arCfg.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
+
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[23 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[7 + 2 * algo_step];
             }
         } else {
             /*Swing communication partner calculations*/
@@ -140,6 +145,8 @@ int main(int argc, char** argv) {
                 dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
                 uint32_t* blocks_to_send = &dataflow_args[22 + 2 * arCfg.SWING_ALGO_STEPS + 2 * algo_step];
+                blocks_to_send[0] = 0;
+                blocks_to_send[1] = 0;
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
@@ -147,6 +154,8 @@ int main(int argc, char** argv) {
                 }
 
                 uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
+                blocks_to_recv[0] = 0;
+                blocks_to_recv[1] = 0;
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -159,6 +168,8 @@ int main(int argc, char** argv) {
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
+                dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
+                dataflow_args[23 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[7 + 2 * algo_step];
             }
             step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
