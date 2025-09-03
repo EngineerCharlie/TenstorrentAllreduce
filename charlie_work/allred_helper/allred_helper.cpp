@@ -34,6 +34,8 @@ void validate_result_vector(
     float error = static_cast<float>(ERROR);
     float max_error = 0.0f;
     int max_error_index = 0;
+    // string to be added to during for loop
+    std::string debug_info = "Mismatch blocks: ";
 
     for (size_t i = 0; i < num_els * 2; i++) {
         trgt_vec_b16[i] = static_cast<bfloat16>(
@@ -42,13 +44,17 @@ void validate_result_vector(
         float actual = result_vec_b16[i].to_float();
         float expected = trgt_vec_b16[i].to_float();
         float diff = std::fabs(actual - expected);
-
+        
         if (all_match && diff > error) {
             printf("Mismatch at index %zu:\n", i);
             printf("  Expected: %d\n", static_cast<int>(expected));
             printf("  Actual  : %d\n", static_cast<int>(actual));
             printf("  Original values: %f %f\n\n", src_vec_0_b16[i].to_float(), src_vec_1_b16[i].to_float());
             all_match = false;
+            if (static_cast<int>(i)%1024==0){
+                debug_info += std::to_string(static_cast<int>(i)/1024) + " ";
+            }
+
         } else if (diff <= error) {
             last_matching_index = static_cast<int>(i);
             num_matches++;
@@ -57,6 +63,9 @@ void validate_result_vector(
             if (diff > max_error) {
                 max_error = diff;
                 max_error_index = static_cast<int>(i);
+            }
+            if (static_cast<int>(i)%1024==0){
+                debug_info += std::to_string(static_cast<int>(i)/1024) + " ";
             }
         }
     }
@@ -100,11 +109,12 @@ void validate_result_vector(
 
         if (max_error_index + 10 < static_cast<int>(trgt_vec_b16.size())) {
             printf(
-                "Max error index +10: %d, values %f vs %f\n",
+                "Max error index +10: %d, values %f vs %f",
                 max_error_index + 10,
                 result_vec_b16[max_error_index + 10].to_float(),
                 trgt_vec_b16[max_error_index + 10].to_float());
         }
+        printf("\n%s\n________________\n", debug_info.c_str());
     }
 }
 
@@ -212,7 +222,7 @@ AllredConfig::AllredConfig(
     }
 
     constexpr uint32_t num_semaphore_tiles = 1;
-    constexpr uint32_t semaphore_tile_size = 32;
+    constexpr uint32_t semaphore_tile_size = 1;
     constexpr uint32_t cb_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
 

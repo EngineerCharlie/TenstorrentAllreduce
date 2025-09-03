@@ -10,15 +10,15 @@
 namespace NAMESPACE {
 void MAIN {
     uint32_t algo_steps = get_arg_val<uint32_t>(0);
-    uint32_t this_core_x = get_arg_val<uint32_t>(1);
-    uint32_t this_core_y = get_arg_val<uint32_t>(2);
-    uint32_t packed_bools = get_arg_val<uint32_t>(3);
+    // uint32_t this_core_x = get_arg_val<uint32_t>(1);
+    // uint32_t this_core_y = get_arg_val<uint32_t>(2);
+    // uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
     uint32_t num_tiles_per_node = get_arg_val<uint32_t>(5);
     uint32_t total_nodes = num_tiles / num_tiles_per_node;
-    constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
-    constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
-    constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
+    // constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
+    // constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
+    // constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
 
@@ -30,12 +30,9 @@ void MAIN {
         block_indexes[i] = (high_bits << 32) | low_bits;
     }
 
-    // cb_wait_front(cb_id_local, num_tiles); // Wait for dataflow to read data from dram
-
     // Initialize the compute cores
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
-    add_tiles_init(cb_id_local, cb_id_recv);//, true);
-    // cb_pop_front(cb_id_local, num_tiles);
+    add_tiles_init(cb_id_local, cb_id_recv);
 
     bool recv_block;
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
@@ -54,14 +51,12 @@ void MAIN {
                         tile_regs_acquire();
                         add_tiles(cb_id_local, cb_id_recv, 0, 0, reg_index);
                         tile_regs_commit();
-                    }
-                    cb_pop_front(cb_id_recv, 1);
-                    cb_pop_front(cb_id_local, 1);
-                    if (recv_block) { // Only part that can be skipped without hangs
                         tile_regs_wait();
                         pack_tile<true>(reg_index, cb_id_local, tile_num);
                         tile_regs_release();
                     }
+                    cb_pop_front(cb_id_recv, 1);
+                    cb_pop_front(cb_id_local, 1);
                 }
             }
         }
