@@ -50,18 +50,18 @@ void MAIN {
                      tile_num++) {
                     cb_wait_front(cb_id_recv, 1); // Await blocks to be exchanged
                     cb_wait_front(cb_id_local, 1);                   // Unpack
-                    tile_regs_acquire();
-                    add_tiles(cb_id_local, cb_id_recv, 0, 0, reg_index);
-                    tile_regs_commit();
-
-                    tile_regs_wait();
                     if (recv_block) { // Only part that can be skipped without hangs
-                        pack_tile<true>(reg_index, cb_id_local, tile_num);
+                        tile_regs_acquire();
+                        add_tiles(cb_id_local, cb_id_recv, 0, 0, reg_index);
+                        tile_regs_commit();
                     }
-                    tile_regs_release();
                     cb_pop_front(cb_id_recv, 1);
                     cb_pop_front(cb_id_local, 1);
-                    // reg_index = (reg_index + 2)%16;
+                    if (recv_block) { // Only part that can be skipped without hangs
+                        tile_regs_wait();
+                        pack_tile<true>(reg_index, cb_id_local, tile_num);
+                        tile_regs_release();
+                    }
                 }
             }
         }

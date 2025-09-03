@@ -113,7 +113,7 @@ void kernel_main() {
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
-    uint32_t num_syncs = 16;  // Peak at 16, 32 causes hanging
+    uint32_t num_syncs = 32;  // Peak at 16, 32 causes hanging
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         DeviceZoneScopedN("ALL_RED_LOOP");
         for (uint32_t i = 0; i < algo_steps; i++) {
@@ -123,17 +123,13 @@ void kernel_main() {
             cb_pop_front(cb_id_this, 1);
             // DPRINT << "passed cbs" << i << ENDL();
 
-            uint32_t n_block_sync = total_nodes / num_syncs - 1;
+            uint32_t n_block_sync = total_nodes / num_syncs;
             if (this_core_SE == direction_SE) {
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
 
                 dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv);
-                // await sem from compute, and ack that the array is ready
-                if (i!= 0){
-                    cb_reserve_back(cb_id_local, num_tiles);
-                    // cb_wait_front(cb_id_local, num_tiles);
-                }
+                cb_reserve_back(cb_id_local, num_tiles);
                 // DPRINT << " reserved cbs" << i << ENDL();
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
@@ -157,9 +153,7 @@ void kernel_main() {
                     if (n_block >= n_block_sync) {
                         // Periodically (every num_tiles/num_sync blocks) increment synchronize the nodes and
                         // increment the the circular buffers, allowing computation to proceed
-                        if (blocks_to_send > 0) {
-                            noc_async_write_barrier();
-                        }
+                        noc_async_write_barrier();
                         noc_semaphore_inc(dst_noc_semaphore_1, 1);
                         cb_push_back(cb_id_local, num_tiles / num_syncs);
                         n_block_sync = n_block_sync + (total_nodes / num_syncs);
@@ -172,7 +166,6 @@ void kernel_main() {
                 for (uint32_t n_block = 0; n_block < num_syncs; n_block++) {
                     noc_semaphore_wait_min(semaphore_1_ptr[0], j * num_syncs * algo_steps + i * num_syncs + n_block + 1);
                     cb_push_back(cb_id_recv, num_tiles / num_syncs);
-                    // cb_pop_front(cb_id_local, num_tiles / num_syncs);
                 }
                 // DPRINT << "Array rcv val "<< (uint32_t) recv_array[0] << ENDL();
             }
