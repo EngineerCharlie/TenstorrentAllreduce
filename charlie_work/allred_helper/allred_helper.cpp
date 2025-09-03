@@ -30,6 +30,7 @@ void validate_result_vector(
     std::vector<bfloat16> trgt_vec_b16 = unpack_uint32_vec_into_bfloat16_vec(src_vec_1);  // reused buffer
 
     int last_matching_index = 0;
+    int last_incorrect_index = 0;
     float error = static_cast<float>(ERROR);
     float max_error = 0.0f;
     int max_error_index = 0;
@@ -52,6 +53,7 @@ void validate_result_vector(
             last_matching_index = static_cast<int>(i);
             num_matches++;
         } else {
+            last_incorrect_index = static_cast<int>(i);
             if (diff > max_error) {
                 max_error = diff;
                 max_error_index = static_cast<int>(i);
@@ -67,6 +69,12 @@ void validate_result_vector(
             "Last match at index %d: %d\n\n",
             last_matching_index,
             static_cast<int>(result_vec_b16[last_matching_index].to_float()));
+        printf(
+            "Last wrong at index %d: %d Shpuld be: %d\n\n",
+            last_incorrect_index,
+            static_cast<int>(result_vec_b16[last_incorrect_index].to_float()),
+            static_cast<int>(trgt_vec_b16[last_incorrect_index].to_float()));
+
         printf("Result (nocast) = %d, casted = %d\n", result_vec[0], static_cast<int>(result_vec_b16[0].to_float()));
 
         uint32_t output = pack_two_bfloat16_into_uint32({trgt_vec_b16[0], trgt_vec_b16[1]});
@@ -203,7 +211,7 @@ AllredConfig::AllredConfig(
         core_array[i] = {i % SIDE_LENGTH, i / SIDE_LENGTH};
     }
 
-    constexpr uint32_t num_semaphore_tiles = 4;
+    constexpr uint32_t num_semaphore_tiles = 1;
     constexpr uint32_t semaphore_tile_size = 32;
     constexpr uint32_t cb_tile_size = 2048;
     constexpr tt::DataFormat data_format = tt::DataFormat::Float16_b;
@@ -241,6 +249,7 @@ AllredConfig::AllredConfig(
     if (RND_SRC < 0) {
         src_vec_0 = create_constant_vector_of_bfloat16(single_tile_size * NUM_TILES, 1.0f);
         src_vec_1 = src_vec_0;
+        result_vec = create_constant_vector_of_bfloat16(single_tile_size * NUM_TILES, 0.0f);
     } else {
         src_vec_0 = create_random_vector_of_bfloat16(single_tile_size * NUM_TILES, 100, RND_SRC);
         src_vec_1 = create_random_vector_of_bfloat16(single_tile_size * NUM_TILES, 100, RND_SRC + 1);
