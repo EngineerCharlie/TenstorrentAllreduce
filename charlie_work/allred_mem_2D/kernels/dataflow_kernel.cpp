@@ -177,6 +177,22 @@ void kernel_main() {
                    << " and sum [last]" << recv_array[this_core_i * num_els_per_node + el_end - 1] << ENDL();
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
+            uint32_t offset = tile_block_size * this_core_i;
+            uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
+            noc_async_write(l1_write_addr_local, dst0_noc_addr, tile_block_size);
+            noc_async_write_barrier();
+            sync_nodes(
+                algo_steps,
+                this_core_SE,
+                num_sem_0,
+                semaphore_0,
+                semaphore_0_ptr,
+                semaphore_1_ptr,
+                dst_core_x,
+                dst_core_y,
+                &num_syncs);
+            noc_async_read(dst0_noc_addr, l1_write_addr_local, total_vector_size);
+            noc_async_read_barrier();
         }
     }
     uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
