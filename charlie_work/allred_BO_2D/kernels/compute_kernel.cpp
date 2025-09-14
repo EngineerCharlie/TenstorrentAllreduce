@@ -11,6 +11,9 @@ namespace NAMESPACE {
 void MAIN {
     uint32_t algo_steps = get_arg_val<uint32_t>(0);
     bool bandwidth_optimal = (bool) get_arg_val<uint32_t>(1);
+    DPRINT_MATH(DPRINT << "Math bo "<< (uint32_t) bandwidth_optimal << ENDL());
+    DPRINT_PACK(DPRINT << "Pack bo "<< (uint32_t) bandwidth_optimal << ENDL());
+    DPRINT_UNPACK(DPRINT << "Unpack bo "<< (uint32_t) bandwidth_optimal << ENDL());
     // uint32_t this_core_y = get_arg_val<uint32_t>(2);
     // uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
@@ -33,14 +36,15 @@ void MAIN {
     // Initialize the compute cores
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init(cb_id_local, cb_id_recv);
-
-    bool recv_block;
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+    
+    bool recv_block = true;
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-                recv_block = bandwidth_optimal ? (block_indexes[i] >> n_block) & 1 : true;  // Extract bit i
+                if (bandwidth_optimal)
+                    recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
 
                 for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
                      tile_num++) {
@@ -57,9 +61,15 @@ void MAIN {
                     cb_pop_front(cb_id_recv, 1);
                     cb_pop_front(cb_id_local, 1);
                 }
+                // DPRINT_MATH(DPRINT << "Math recv "<< (uint32_t) recv_block << ENDL());
+                // DPRINT_PACK(DPRINT << "Pack recv "<< (uint32_t) recv_block << ENDL());
+                // DPRINT_UNPACK(DPRINT << "Unpack recv "<< (uint32_t) recv_block << ENDL());
             }
         }
     }
+    // DPRINT_MATH(DPRINT << "Math bo "<< (uint32_t) bandwidth_optimal << ENDL());
+    // DPRINT_PACK(DPRINT << "Pack bo "<< (uint32_t) bandwidth_optimal << ENDL());
+    // DPRINT_UNPACK(DPRINT << "Unpack bo "<< (uint32_t) bandwidth_optimal << ENDL());
     DPRINT_MATH(DPRINT << "Compute done " << ENDL());
 }
 }  // namespace NAMESPACE

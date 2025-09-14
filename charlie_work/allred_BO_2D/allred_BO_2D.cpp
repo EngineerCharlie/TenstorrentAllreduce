@@ -9,6 +9,15 @@ int main(int argc, char** argv) {
 
     CommandQueue& cq = device->command_queue();
     Program program = CreateProgram();
+    /*
+    Arg 1: is swing version? 0 1 (0 = recdub)
+    Arg 2: Run the kernel? 0 1
+    Arg 3: Size of node array 1,2,4,8
+    Arg 4: Random source, -1, or any I
+    arg 5: Number of tiles, 1-5
+    arg 6: Acceptible calculation error (due to bfloat16 rounding  )
+    Arg 7: Which core should copy results to host
+    Arg 8: is bandwidth optimal? 0 1 (0 = latency optimal)*/
 
     int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
     int PRINT_CORE = (argc >= 8) ? std::stoi(argv[7]) : 0;
@@ -68,7 +77,6 @@ int main(int argc, char** argv) {
         dataflow_args[7] = (uint32_t)physical_core.x;
         dataflow_args[8] = (uint32_t)physical_core.y;
         dataflow_args[9] = (uint32_t)core_i;  // Added core_i
-        compute_args[1] = (uint32_t)physical_core.x;
         compute_args[2] = (uint32_t)physical_core.y;
         if (arCfg.core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = arCfg.src_1_dram_buffer->address();

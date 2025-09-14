@@ -121,6 +121,11 @@ void kernel_main() {
     bool direction_SE, send_block;
     uint32_t num_syncs = 32;  // Peak at 16, 32 causes hanging
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+        num_syncs = num_tiles / 2;
+    } else if (num_tiles <= 2) {
+        num_syncs = 1;
+    }
+
         DeviceZoneScopedN("ALL_RED_LOOP");
         {
         sync_NOC(cb_id_this, cb_id_that);
@@ -140,13 +145,11 @@ void kernel_main() {
 
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                if (bandwidth_optimal)
-                    noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 1);
-                else
-                    noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
+                int semaphore_wait_count = bandwidth_optimal ? 2 * j + 1 : j + 1;
+                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], semaphore_wait_count);
 
                 for (uint32_t n_block = 0; n_block < total_nodes; ) {
-                    send_block = bandwidth_optimal?  (send_block_indexes[i] >> n_block) & 1 : true;
+                    send_block = bandwidth_optimal ?  (send_block_indexes[i] >> n_block) & 1 : true;
                     uint32_t blocks_to_send = 0;
                     if (send_block) {
                         uint32_t offset = tile_block_size * n_block;
@@ -154,7 +157,7 @@ void kernel_main() {
                         while (send_block && n_block < total_nodes && n_block < n_block_sync) { // Send contiguous blocks
                             blocks_to_send++;
                             n_block++;
-                            send_block = (send_block_indexes[i] >> n_block) & 1;  // Extract bit i
+                            send_block = bandwidth_optimal ?  (send_block_indexes[i] >> n_block) & 1 : true;  // Extract bit i
                         }
                         noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * blocks_to_send);
                     } else {
@@ -233,7 +236,7 @@ void kernel_main() {
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr);
         noc_async_write(l1_write_addr_local, dst0_noc_addr, total_vector_size);
         noc_async_write_barrier();
-        DPRINT << "NOC SE finished" << ENDL();
+        DPRINT << "NOC SE finished" << (uint32_t) bandwidth_optimal << ENDL();
     } else {
         DPRINT << "NOC NW finished" << ENDL();
     }
