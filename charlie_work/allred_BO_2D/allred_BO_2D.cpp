@@ -186,12 +186,13 @@ int main(int argc, char** argv) {
         dataflow_args[11] = step_directions;
         compute_args[3] = step_directions;
 
+        std::string dataflow_kernel_path = BANDWIDTH_OPTIMAL ? "allred_BO_2D" : "allred_LOO_2D";
         /*SE Kernel*/
         dataflow_args[10] = (uint32_t)true;
-        dataflow_0_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, true, "allred_BO_2D");  // SE kernel
+        dataflow_0_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, true, dataflow_kernel_path);  // SE kernel
         /*NW Kernel*/
         dataflow_args[10] = (uint32_t)false;
-        dataflow_1_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, false,"allred_BO_2D"); // NW kernel
+        dataflow_1_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, false, dataflow_kernel_path); // NW kernel
         compute_kernel = CreateComputeKernel(program, arCfg.core_array[core_i], compute_args,"allred_BO_2D");
     }
     

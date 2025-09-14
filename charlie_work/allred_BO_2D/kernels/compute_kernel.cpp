@@ -11,9 +11,6 @@ namespace NAMESPACE {
 void MAIN {
     uint32_t algo_steps = get_arg_val<uint32_t>(0);
     bool bandwidth_optimal = (bool) get_arg_val<uint32_t>(1);
-    DPRINT_MATH(DPRINT << "Math bo "<< (uint32_t) bandwidth_optimal << ENDL());
-    DPRINT_PACK(DPRINT << "Pack bo "<< (uint32_t) bandwidth_optimal << ENDL());
-    DPRINT_UNPACK(DPRINT << "Unpack bo "<< (uint32_t) bandwidth_optimal << ENDL());
     // uint32_t this_core_y = get_arg_val<uint32_t>(2);
     // uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
