@@ -218,15 +218,16 @@ AllredConfig::AllredConfig(
 
     if (large_buffer) {
         NUM_TILES = NUM_TILES * TOTAL_NODES;
-    } else {
+    } else if (NUM_TILES < 64){
         uint32_t power = 1;
         while (power < NUM_TILES) {
             power <<= 1; // multiply by 2
         }
         NUM_TILES = power;
+    } else {
+        NUM_TILES = ((NUM_TILES + 64 - 1) / 64) * 64; // multiple of 64
     }
-    
-    NUM_TILES = large_buffer ? NUM_TILES * TOTAL_NODES : NUM_TILES;
+
     SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
 
     core_array.resize(TOTAL_NODES);

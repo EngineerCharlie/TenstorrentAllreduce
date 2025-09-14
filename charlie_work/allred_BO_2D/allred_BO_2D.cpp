@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
         dataflow_args[11] = step_directions;
         compute_args[3] = step_directions;
 
-        std::string dataflow_kernel_path = BANDWIDTH_OPTIMAL ? "allred_BO_2D" : "allred_LOO_2D";
+        std::string dataflow_kernel_path = arCfg.NUM_TILES >= 64 ? "allred_BO_2D" : "allred_LOO_2D";
         /*SE Kernel*/
         dataflow_args[10] = (uint32_t)true;
         dataflow_0_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, true, dataflow_kernel_path);  // SE kernel

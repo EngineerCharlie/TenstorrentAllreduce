@@ -34,7 +34,6 @@ void MAIN {
     // Initialize the compute cores
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init(cb_id_local, cb_id_recv);
-    
     bool recv_block = true;
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {

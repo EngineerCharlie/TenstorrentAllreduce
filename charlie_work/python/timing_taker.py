@@ -28,7 +28,7 @@ if not os.path.exists(output_csv):
         writer.writerow(csv_header)
 
 # Iterate over workload combinations
-for run_num in range(0,5):
+for run_num in range(0,20):
     for mode in modes:
         if mode == "allred_BO_2D":
             path_mode = "allred_BO_2D"

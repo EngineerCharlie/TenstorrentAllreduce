@@ -112,9 +112,10 @@ void kernel_main() {
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE;
     uint32_t num_syncs = 32;  // Default max synchronizations
-    uint32_t sync_stride = total_nodes / num_syncs;
+    uint32_t sync_stride = num_tiles / num_syncs;
     if (num_tiles < 64 && num_tiles > 2) {
         num_syncs = num_tiles / 2;
+        sync_stride = num_tiles / num_syncs;
     } else if (num_tiles == 2) {
         num_syncs = 2;
         sync_stride = 1;
@@ -122,7 +123,7 @@ void kernel_main() {
         num_syncs = 1;
         sync_stride = 1;
     }
-
+    uint32_t total_sem_iters = 0;
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         DeviceZoneScopedN("ALL_RED_LOOP");
         {
@@ -132,7 +133,8 @@ void kernel_main() {
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             sync_NOC(cb_id_this, cb_id_that);
-
+            int total_tiles_pushed = 0;
+            
             if (this_core_SE == direction_SE) {
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
@@ -143,20 +145,26 @@ void kernel_main() {
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
                 noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
 
-                for (uint32_t n_block = 0; n_block < num_tiles; n_block += sync_stride) {
-                    uint32_t offset = tile_block_size * n_block;
+                for (uint32_t n_sync = 0; n_sync < num_syncs; n_sync++) {
+                    uint32_t offset = tile_block_size * n_sync * sync_stride;
                     dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_recv + offset);
-                    noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * sync_stride);
+                    noc_async_write(l1_write_addr_local + offset, dst_noc_addr, ublock_size_bytes_data * sync_stride);
                     noc_async_write_barrier();
                     noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                    total_sem_iters++;
                     cb_push_back(cb_id_local, sync_stride);
+                    total_tiles_pushed += sync_stride;
+                    // DPRINT << "Core itered sem to " << total_sem_iters << " and pushed " << total_tiles_pushed << ENDL();
                 }
             } else {
                 cb_reserve_back(cb_id_recv, num_tiles);
                 // idle core monitors semaphore and pushes data to compute for greater parallelism
                 for (uint32_t n_sync = 0; n_sync < num_syncs; n_sync++) {
                     noc_semaphore_wait_min(semaphore_1_ptr[0], i * num_syncs + n_sync + 1);
-                    cb_push_back(cb_id_recv, num_tiles / num_syncs);
+                    cb_push_back(cb_id_recv, sync_stride);
+                    total_sem_iters++;
+                    total_tiles_pushed += sync_stride;
+                    // DPRINT << "Core waited sem to " << i * num_syncs + n_sync + 1 << " and pushed " << total_tiles_pushed << ENDL();
                 }
             }
         }
