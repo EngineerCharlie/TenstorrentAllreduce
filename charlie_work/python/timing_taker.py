@@ -7,6 +7,7 @@ from time import sleep
 
 # Define variables
 modes = ["allred_BO_2D","allred_LO_2D","allred_mem_2D"]  # Fill in desired modes
+modes = ["allred_LO_2D"]
 swing_algo_LO_BO = [0,1]  # Fill in desired swing algos
 swing_algo_mem = [1]
 data_sizes_LO = [1,2,4,8,16,32,64,128,192,256,320]#,2,4,8,16,32,64,128,192,256,320]  # Fill in desired data sizes
@@ -27,15 +28,20 @@ if not os.path.exists(output_csv):
         writer.writerow(csv_header)
 
 # Iterate over workload combinations
-for run_num in range(13,20):
+for run_num in range(0,5):
     for mode in modes:
         if mode == "allred_BO_2D":
+            path_mode = "allred_BO_2D"
             swing_algos = swing_algo_LO_BO
             data_sizes = data_sizes_BO_mem
+            mode_bool = "1"
         elif mode == "allred_LO_2D":
+            path_mode = "allred_BO_2D"
             swing_algos = swing_algo_LO_BO
             data_sizes = data_sizes_LO
+            mode_bool = "0"
         else:
+            path_mode = "allred_mem_2D"
             swing_algos = swing_algo_mem
             data_sizes = data_sizes_BO_mem
 
@@ -53,8 +59,8 @@ for run_num in range(13,20):
             # Run workload
             workload_cmd = [
                 "TT_METAL_DEVICE_PROFILER=1",
-                f"/home/tenstorrent/tt-metal/build_Release_tracy/programming_examples/charlie_work/{mode}",
-                str(swing_algo), "1", "8", "13", str(data_size), "1"
+                f"/home/tenstorrent/tt-metal/build_Release_tracy/programming_examples/charlie_work/{path_mode}",
+                str(swing_algo), "1", "8", "13", str(data_size), "32", "0", mode_bool
             ]
             workload_proc = subprocess.Popen(" ".join(workload_cmd), shell=True)
 

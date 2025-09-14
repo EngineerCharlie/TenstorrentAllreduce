@@ -14,6 +14,7 @@ void sync_NOC(int cb_id_this, int cb_id_that) {
     cb_pop_front(cb_id_this, 1);
 }
 
+// Returns true if this core should send its block in this iteration
 bool shouldSendBlock(bool bandwidth_optimal,
                      uint64_t send_block_index,
                      uint32_t n_block,
@@ -131,13 +132,16 @@ void kernel_main() {
 
     uint64_t dst_noc_semaphore_0, dst_noc_semaphore_1, dst_noc_addr;
     bool direction_SE, send_block;
-    uint32_t num_syncs = 32;  // Peak at 16, 32 causes hanging
+    uint32_t num_syncs = 32;  // Default max synchronizations
+    uint32_t sync_stride = total_nodes / num_syncs;
     if (num_tiles < 64 && num_tiles > 2) {
         num_syncs = num_tiles / 2;
     } else if (num_tiles == 2) {
         num_syncs = 2;
+        sync_stride = 1;
     } else if (num_tiles <= 1) {
         num_syncs = 1;
+        sync_stride = 1;
     }
 
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
@@ -149,9 +153,8 @@ void kernel_main() {
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             sync_NOC(cb_id_this, cb_id_that);
-            // DPRINT << "passed cbs" << i << ENDL();
 
-            uint32_t n_block_sync = total_nodes / num_syncs;
+            uint32_t n_block_sync = sync_stride;
             if (this_core_SE == direction_SE) {
                 dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
                 dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[0]);
@@ -186,7 +189,10 @@ void kernel_main() {
                         noc_async_write_barrier();
                         noc_semaphore_inc(dst_noc_semaphore_1, 1);
                         cb_push_back(cb_id_local, num_tiles / num_syncs);
-                        n_block_sync = n_block_sync + (total_nodes / num_syncs);
+                        n_block_sync = n_block_sync + sync_stride;
+                        if (n_block > num_tiles) {
+                            n_block += total_nodes;
+                        }
                     }
                 }
             } else {
