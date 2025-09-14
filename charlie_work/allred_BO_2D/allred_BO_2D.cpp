@@ -12,6 +12,10 @@ int main(int argc, char** argv) {
 
     int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
     int PRINT_CORE = (argc >= 8) ? std::stoi(argv[7]) : 0;
+    int BANDWIDTH_OPTIMAL = (argc >= 9) ? std::stoi(argv[8]) : 0;
+    if (BANDWIDTH_OPTIMAL != 0) {
+        BANDWIDTH_OPTIMAL = 1;
+    }
     CoreRange cores({0, 0}, {SIDE_LENGTH - 1, SIDE_LENGTH - 1});
 
     // Initialize the allreduce parameters
@@ -35,6 +39,7 @@ int main(int argc, char** argv) {
     dataflow_args[1] = arCfg.dst_dram_buffer->address();
     dataflow_args[3] = PRINT_CORE;
     dataflow_args[4] = arCfg.dst_bank_id;
+    dataflow_args[5] = BANDWIDTH_OPTIMAL;
     dataflow_args[6] = arCfg.SWING_ALGO_STEPS;
     dataflow_args[12] = arCfg.NUM_TILES;
     dataflow_args[13] = arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
@@ -45,6 +50,7 @@ int main(int argc, char** argv) {
     /*Compute kernel arg initialization*/
     std::vector<uint32_t> compute_args(6 + 2 * arCfg.SWING_ALGO_STEPS);
     compute_args[0] = arCfg.SWING_ALGO_STEPS;
+    compute_args[1] = BANDWIDTH_OPTIMAL;
     compute_args[4] = arCfg.NUM_TILES;
     compute_args[5] = arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
 
@@ -179,7 +185,7 @@ int main(int argc, char** argv) {
 
         /*SE Kernel*/
         dataflow_args[10] = (uint32_t)true;
-        dataflow_0_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, true,"allred_BO_2D");  // SE kernel
+        dataflow_0_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, true, "allred_BO_2D");  // SE kernel
         /*NW Kernel*/
         dataflow_args[10] = (uint32_t)false;
         dataflow_1_kernel = CreateDataflowKernel(program, arCfg.core_array[core_i], dataflow_args, false,"allred_BO_2D"); // NW kernel

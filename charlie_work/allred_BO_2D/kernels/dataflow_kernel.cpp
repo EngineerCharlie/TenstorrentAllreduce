@@ -20,7 +20,7 @@ void kernel_main() {
     uint32_t src0_bank_id = get_arg_val<uint32_t>(2);
     uint32_t print_core = get_arg_val<uint32_t>(3);
     uint32_t dst0_bank_id = get_arg_val<uint32_t>(4);
-    // uint32_t dst0_dram_noc_y = get_arg_val<uint32_t>(5);
+    uint32_t bandwidth_optimal = (bool) get_arg_val<uint32_t>(5);
 
     uint32_t algo_steps = get_arg_val<uint32_t>(6);
     uint32_t num_tiles = get_arg_val<uint32_t>(12);
@@ -125,7 +125,7 @@ void kernel_main() {
         {
         sync_NOC(cb_id_this, cb_id_that);
         noc_semaphore_set(semaphore_1_ptr[0], 0);
-        //reduce scatter
+        // bandwidth optimal ? reduce scatter : allreduce
         for (uint32_t i = 0; i < algo_steps; i++) {
             direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
             sync_NOC(cb_id_this, cb_id_that);
@@ -140,10 +140,13 @@ void kernel_main() {
 
                 // await first sem from comm partner
                 noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 1);
+                if (bandwidth_optimal)
+                    noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 1);
+                else
+                    noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], j + 1);
 
                 for (uint32_t n_block = 0; n_block < total_nodes; ) {
-                    send_block = (send_block_indexes[i] >> n_block) & 1;  // Extract bit i
+                    send_block = bandwidth_optimal?  (send_block_indexes[i] >> n_block) & 1 : true;
                     uint32_t blocks_to_send = 0;
                     if (send_block) {
                         uint32_t offset = tile_block_size * n_block;
@@ -178,46 +181,48 @@ void kernel_main() {
         if (this_core_SE){
             cb_reserve_back(cb_id_recv, num_tiles);
         }
-        sync_NOC(cb_id_this, cb_id_that);
-        noc_semaphore_set(semaphore_1_ptr[0], 0);
-        noc_semaphore_set(semaphore_1_ptr[1], 0);
-        //all gather
-        for (uint32_t i = algo_steps; i-- > 0; ) {
-            direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
+        if (bandwidth_optimal){
             sync_NOC(cb_id_this, cb_id_that);
+            noc_semaphore_set(semaphore_1_ptr[0], 0);
+            noc_semaphore_set(semaphore_1_ptr[1], 0);
+            //all gather
+            for (uint32_t i = algo_steps; i-- > 0; ) {
+                direction_SE = (packed_direction_bools >> i) & 1;  // Extract bit i
+                sync_NOC(cb_id_this, cb_id_that);
 
-            if (this_core_SE == direction_SE) {
-                dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
-                dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
+                if (this_core_SE == direction_SE) {
+                    dst_noc_semaphore_0 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_0[i % num_sem_0]);
+                    dst_noc_semaphore_1 = get_noc_addr(dst_core_x[i], dst_core_y[i], semaphore_1[i % num_sem_1]);
 
-                // await first sem from comm partner
-                noc_semaphore_inc(dst_noc_semaphore_0, 1);
-                noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 2);
+                    // await first sem from comm partner
+                    noc_semaphore_inc(dst_noc_semaphore_0, 1);
+                    noc_semaphore_wait_min(semaphore_0_ptr[i % num_sem_0], 2 * j + 2);
 
-                for (uint32_t n_block = 0; n_block < total_nodes; ) {
-                    send_block = (recv_block_indexes[i] >> n_block) & 1;  // Extract bit i
-                    if (send_block) {
-                        uint32_t offset = tile_block_size * n_block;
-                        dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_local + offset);
-                        uint32_t tiles_to_send = 0;
-                        do {  // Send contiguous blocks
-                            tiles_to_send++;
+                    for (uint32_t n_block = 0; n_block < total_nodes; ) {
+                        send_block = (recv_block_indexes[i] >> n_block) & 1;  // Extract bit i
+                        if (send_block) {
+                            uint32_t offset = tile_block_size * n_block;
+                            dst_noc_addr = get_noc_addr(dst_core_x[i], dst_core_y[i], l1_write_addr_local + offset);
+                            uint32_t tiles_to_send = 0;
+                            do {  // Send contiguous blocks
+                                tiles_to_send++;
+                                n_block++;
+                                if (n_block < total_nodes) {
+                                    send_block = (recv_block_indexes[i] >> n_block) & 1;
+                                } else {
+                                    send_block = 0;  // Prevent reading past the mask
+                                }
+                            } while (send_block && n_block < total_nodes);
+                            noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * tiles_to_send);
+                        } else {
                             n_block++;
-                            if (n_block < total_nodes) {
-                                send_block = (recv_block_indexes[i] >> n_block) & 1;
-                            } else {
-                                send_block = 0;  // Prevent reading past the mask
-                            }
-                        } while (send_block && n_block < total_nodes);
-                        noc_async_write(l1_write_addr_local + offset, dst_noc_addr, tile_block_size * tiles_to_send);
-                    } else {
-                        n_block++;
+                        }
                     }
+                    noc_async_write_barrier();
+                    noc_semaphore_inc(dst_noc_semaphore_1, 1);
+                    uint32_t sem_value = ((algo_steps - i)+1)/2;
+                    noc_semaphore_wait_min(semaphore_1_ptr[i%2], sem_value);
                 }
-                noc_async_write_barrier();
-                noc_semaphore_inc(dst_noc_semaphore_1, 1);
-                uint32_t sem_value = ((algo_steps - i)+1)/2;
-                noc_semaphore_wait_min(semaphore_1_ptr[i%2], sem_value);
             }
         }
         }

@@ -10,7 +10,7 @@
 namespace NAMESPACE {
 void MAIN {
     uint32_t algo_steps = get_arg_val<uint32_t>(0);
-    // uint32_t this_core_x = get_arg_val<uint32_t>(1);
+    bool bandwidth_optimal = (bool) get_arg_val<uint32_t>(1);
     // uint32_t this_core_y = get_arg_val<uint32_t>(2);
     // uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
@@ -38,10 +38,9 @@ void MAIN {
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {
             // Signal appropriate NOC core to exchange data with other core
-
             uint32_t reg_index = 0;
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
-                recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
+                recv_block = bandwidth_optimal ? (block_indexes[i] >> n_block) & 1 : true;  // Extract bit i
 
                 for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
                      tile_num++) {
