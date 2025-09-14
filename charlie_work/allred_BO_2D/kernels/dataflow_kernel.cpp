@@ -121,6 +121,7 @@ void kernel_main() {
     bool direction_SE, send_block;
     uint32_t num_syncs = 32;  // Peak at 16, 32 causes hanging
     for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+    if (num_tiles < 64 && num_tiles > 2) {
         num_syncs = num_tiles / 2;
     } else if (num_tiles <= 2) {
         num_syncs = 1;
