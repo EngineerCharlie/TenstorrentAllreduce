@@ -210,9 +210,22 @@ AllredConfig::AllredConfig(
     RND_SRC = (argc >= 5) ? std::stoi(argv[4]) : 0;
 
     NUM_TILES = (argc >= 6) ? std::stoi(argv[5]) : 1;
+    NUM_TILES = NUM_TILES < 1 ? 1 : NUM_TILES;
+
     ERROR = (argc >= 7) ? std::stoi(argv[6]) : 1;
 
     TOTAL_NODES = SIDE_LENGTH * SIDE_LENGTH;
+
+    if (large_buffer) {
+        NUM_TILES = NUM_TILES * TOTAL_NODES;
+    } else {
+        uint32_t power = 1;
+        while (power < NUM_TILES) {
+            power <<= 1; // multiply by 2
+        }
+        NUM_TILES = power;
+    }
+    
     NUM_TILES = large_buffer ? NUM_TILES * TOTAL_NODES : NUM_TILES;
     SWING_ALGO_STEPS = static_cast<uint32_t>(std::log2(TOTAL_NODES));
 

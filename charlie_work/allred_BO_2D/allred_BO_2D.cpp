@@ -21,14 +21,12 @@ int main(int argc, char** argv) {
 
     int SIDE_LENGTH = (argc >= 4) ? highest_power_of_two(std::stoi(argv[3])) : 1;
     int PRINT_CORE = (argc >= 8) ? std::stoi(argv[7]) : 0;
-    int BANDWIDTH_OPTIMAL = (argc >= 9) ? std::stoi(argv[8]) : 0;
-    if (BANDWIDTH_OPTIMAL != 0) {
-        BANDWIDTH_OPTIMAL = 1;
-    }
+    bool BANDWIDTH_OPTIMAL = (argc >= 9) ? (bool) std::stoi(argv[8]) : false;
+
     CoreRange cores({0, 0}, {SIDE_LENGTH - 1, SIDE_LENGTH - 1});
 
     // Initialize the allreduce parameters
-    AllredConfig arCfg(argc, argv, device, cq, program, cores, SIDE_LENGTH, true);
+    AllredConfig arCfg(argc, argv, device, cq, program, cores, SIDE_LENGTH, BANDWIDTH_OPTIMAL);
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 4 * arCfg.SWING_ALGO_STEPS);
@@ -51,7 +49,7 @@ int main(int argc, char** argv) {
     dataflow_args[5] = BANDWIDTH_OPTIMAL;
     dataflow_args[6] = arCfg.SWING_ALGO_STEPS;
     dataflow_args[12] = arCfg.NUM_TILES;
-    dataflow_args[13] = arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
+    dataflow_args[13] = arCfg.NUM_TILES / arCfg.TOTAL_NODES == 0 ? 1 : arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
     for (int i = 0; i < 8; i++) {
         dataflow_args[14 + 2 * arCfg.SWING_ALGO_STEPS + i] = (uint32_t)tt_metal::CreateSemaphore(program, cores, INVALID);
     }
@@ -61,7 +59,7 @@ int main(int argc, char** argv) {
     compute_args[0] = arCfg.SWING_ALGO_STEPS;
     compute_args[1] = BANDWIDTH_OPTIMAL;
     compute_args[4] = arCfg.NUM_TILES;
-    compute_args[5] = arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
+    compute_args[5] = arCfg.NUM_TILES / arCfg.TOTAL_NODES == 0 ? 1 : arCfg.NUM_TILES / arCfg.TOTAL_NODES;  // tiles per node
 
     /*reused variable initialization*/
     KernelHandle dataflow_0_kernel, dataflow_1_kernel, compute_kernel;
@@ -74,10 +72,7 @@ int main(int argc, char** argv) {
     /*create kernels for each core*/
     for (int core_i = 0; core_i < arCfg.core_array.size(); core_i++) {
         physical_core = device->worker_core_from_logical_core(arCfg.core_array[core_i]);
-        dataflow_args[7] = (uint32_t)physical_core.x;
-        dataflow_args[8] = (uint32_t)physical_core.y;
         dataflow_args[9] = (uint32_t)core_i;  // Added core_i
-        compute_args[2] = (uint32_t)physical_core.y;
         if (arCfg.core_array[core_i].x % 2 == 0) {
             dataflow_args[0] = arCfg.src_1_dram_buffer->address();
             dataflow_args[2] = arCfg.src_1_bank_id;
