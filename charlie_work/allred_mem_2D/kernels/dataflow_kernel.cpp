@@ -150,18 +150,6 @@ void kernel_main() {
                 dst_core_x,
                 dst_core_y,
                 &num_syncs);
-            uint32_t el_start, el_end;
-            if (this_core_SE) {
-                el_start = 0;
-                el_end = num_els_per_node / 2;
-            } else {
-                el_start = num_els_per_node / 2;
-                el_end = num_els_per_node;
-            }
-            for (uint32_t el = el_start; el < el_end; el++) {
-                local_array[el] = local_array[this_core_i * num_els_per_node + el];
-            }
-            uint32_t i_start, i_end;
             if (this_core_SE) {
                 cb_push_back(cb_id_local, num_tiles);
                 for (uint32_t i = 0; i < total_nodes; i++) {
@@ -173,14 +161,17 @@ void kernel_main() {
                     cb_push_back(cb_id_recv, num_tiles_per_node);
                 }
             }
-            DPRINT << "NOC after  [first]: " << recv_array[this_core_i * num_els_per_node + el_start]
-                   << " and sum [last]" << recv_array[this_core_i * num_els_per_node + el_end - 1] << ENDL();
+            // DPRINT << "NOC after  [first]: " << recv_array[this_core_i * num_els_per_node + el_start]
+            //        << " and sum [last]" << recv_array[this_core_i * num_els_per_node + el_end - 1] << ENDL();
             cb_wait_front(cb_id_this, 1);
             cb_pop_front(cb_id_this, 1);
+            
             uint32_t offset = tile_block_size * this_core_i;
             uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
-            noc_async_write(l1_write_addr_local, dst0_noc_addr, tile_block_size);
-            noc_async_write_barrier();
+            if (!this_core_SE) {
+                noc_async_write(l1_write_addr_local, dst0_noc_addr, tile_block_size);
+                noc_async_write_barrier();
+            }
             sync_nodes(
                 algo_steps,
                 this_core_SE,
@@ -191,13 +182,15 @@ void kernel_main() {
                 dst_core_x,
                 dst_core_y,
                 &num_syncs);
-            noc_async_read(dst0_noc_addr, l1_write_addr_local, total_vector_size);
-            noc_async_read_barrier();
+            if (this_core_SE) {
+                noc_async_read(dst0_noc_addr, l1_write_addr_local, total_vector_size);
+                noc_async_read_barrier();
+            }
         }
     }
     uint32_t num_els = ublock_size_bytes_data * num_tiles / sizeof(uint32_t);
 
-    if (this_core_SE) {
+    if (!this_core_SE) {
         uint32_t offset = tile_block_size * this_core_i;
         uint64_t dst0_noc_addr = get_noc_addr_from_bank_id<true>(dst0_bank_id, dst0_addr + offset);
         noc_async_write(l1_write_addr_local, dst0_noc_addr, tile_block_size);
