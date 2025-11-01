@@ -23,7 +23,7 @@ void validate_result_vector(
     
 int highest_power_of_two(int);
 
-uint32_t get_SE(int, int);
+uint32_t get_step_directions(int, int);
 
 int get_comm_partner_swing_2D(int, int, bool, int, int);
 

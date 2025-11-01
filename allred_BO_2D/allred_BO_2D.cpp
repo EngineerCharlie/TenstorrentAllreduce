@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
 
     /*NOC kernel arg initialization*/
     std::vector<uint32_t> dataflow_args(14 + 2 * arCfg.SWING_ALGO_STEPS + 8 + 4 * arCfg.SWING_ALGO_STEPS);
-    /*args:
+    /*args for NoC kernel:
     0-5 : src + dst dram
     6: num steps
     7-8: core x, y
@@ -43,6 +43,8 @@ int main(int argc, char** argv) {
     26-33: semaphores for each step
     34-45: block indexes to send at each step
     */
+
+    // Fixed arguments common for all cores
     dataflow_args[1] = arCfg.dst_dram_buffer->address();
     dataflow_args[3] = PRINT_CORE;
     dataflow_args[4] = arCfg.dst_bank_id;
@@ -71,6 +73,7 @@ int main(int argc, char** argv) {
 
     /*create kernels for each core*/
     for (int core_i = 0; core_i < arCfg.core_array.size(); core_i++) {
+        // Calculates physical core coordinates from logical core coordinates
         physical_core = device->worker_core_from_logical_core(arCfg.core_array[core_i]);
         dataflow_args[9] = (uint32_t)core_i;  // Added core_i
         if (arCfg.core_array[core_i].x % 2 == 0) {
@@ -81,7 +84,7 @@ int main(int argc, char** argv) {
             dataflow_args[2] = arCfg.src_0_bank_id;
         }
 
-        /* set block indexes to 0 */
+        /* set block to send/recv indexes to 0 */
         for (int i = 0; i < 2 * arCfg.SWING_ALGO_STEPS; i++) {
             dataflow_args[22 + 2 * arCfg.SWING_ALGO_STEPS + i] = 0;
         }
@@ -93,22 +96,26 @@ int main(int argc, char** argv) {
         if (!arCfg.SWING_VERSION) {
             /*Recursive doubling algo partner node calculations*/
             message_pass_depth = 1;
+            // Calculate communication partners for each step
             for (int algo_step = 0; algo_step < arCfg.SWING_ALGO_STEPS; algo_step++) {
+                //Get linear index of comm partner
                 comm_partner_idx = get_comm_partner_recdub_2D(
                     core_i, algo_step, horizontal_step, message_pass_depth, step_directions, SIDE_LENGTH);
-
-                logical_core = arCfg.core_array[comm_partner_idx];
-                physical_core = device->worker_core_from_logical_core(logical_core);
+                
+                logical_core = arCfg.core_array[comm_partner_idx]; // 2d coordinates of comm partner
+                physical_core = device->worker_core_from_logical_core(logical_core); // Actual core coords
                 dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
-
+                
                 uint32_t* blocks_to_send = &dataflow_args[22 + 2 * arCfg.SWING_ALGO_STEPS + 2 * algo_step];
+                // Set this core's block_to_send bit to 1
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
                     *(blocks_to_send + 1) = *(blocks_to_send + 1) | (1 << (comm_partner_idx - 32));
                 }
 
+                // Set the partner core's block_to_recv bit to 1
                 uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
@@ -119,6 +126,7 @@ int main(int argc, char** argv) {
                 message_pass_depth = horizontal_step ? message_pass_depth : 2 * message_pass_depth;
                 horizontal_step = !horizontal_step;
 
+                //actually calculate the blocks to send
                 get_recdub_block_comm_indexes(
                     comm_partner_idx,
                     algo_step + 1,
@@ -138,24 +146,27 @@ int main(int argc, char** argv) {
                     arCfg.TOTAL_NODES,
                     message_pass_depth,
                     dummy_step_directions);
-
+                
+                // Copy the receiving block coords to the dataflow args as well
                 dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
                 dataflow_args[23 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[7 + 2 * algo_step];
             }
         } else {
             /*Swing communication partner calculations*/
             for (int algo_step = 0; algo_step < arCfg.SWING_ALGO_STEPS; algo_step++) {
+                //Get linear index of comm partner
                 comm_partner_idx =
                     get_comm_partner_swing_2D(core_i, algo_step, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
 
-                logical_core = arCfg.core_array[comm_partner_idx];
-                physical_core = device->worker_core_from_logical_core(logical_core);
+                logical_core = arCfg.core_array[comm_partner_idx];// 2d coordinates of comm partner
+                physical_core = device->worker_core_from_logical_core(logical_core); // Actual core coords
                 dataflow_args[14 + 2 * algo_step] = (uint32_t)physical_core.x;
                 dataflow_args[15 + 2 * algo_step] = (uint32_t)physical_core.y;
 
                 uint32_t* blocks_to_send = &dataflow_args[22 + 2 * arCfg.SWING_ALGO_STEPS + 2 * algo_step];
                 blocks_to_send[0] = 0;
                 blocks_to_send[1] = 0;
+                // Set this core's block_to_send bit to 1
                 if (comm_partner_idx < 32) {
                     *blocks_to_send = *blocks_to_send | (1 << comm_partner_idx);
                 } else {
@@ -165,6 +176,7 @@ int main(int argc, char** argv) {
                 uint32_t* blocks_to_recv = &compute_args[6 + 2 * algo_step];
                 blocks_to_recv[0] = 0;
                 blocks_to_recv[1] = 0;
+                // Set the partner core's block_to_recv bit to 1
                 if (core_i < 32) {
                     *blocks_to_recv = *blocks_to_recv | (1 << core_i);
                 } else {
@@ -172,20 +184,23 @@ int main(int argc, char** argv) {
                 }
 
                 horizontal_step = !horizontal_step;
-
+                // Calc the other indexes to send/recieve
                 get_swing_block_comm_indexes(
                     comm_partner_idx, algo_step + 1, blocks_to_send, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
                 get_swing_block_comm_indexes(
                     core_i, algo_step + 1, blocks_to_recv, horizontal_step, SIDE_LENGTH, arCfg.TOTAL_NODES);
+                //copy the recv also to dataflow from compute
                 dataflow_args[22 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[6 + 2 * algo_step];
                 dataflow_args[23 + 4 * arCfg.SWING_ALGO_STEPS + 2 * algo_step] = compute_args[7 + 2 * algo_step];
             }
-            step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
+            //Set the step directions according to core posn
+            step_directions = get_step_directions(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
 
         dataflow_args[11] = step_directions;
         compute_args[3] = step_directions;
 
+        // The Latency Optimal algorithm uses a different kernel when the vector is smaller than 128kB
         std::string dataflow_kernel_path = arCfg.NUM_TILES >= 64 ? "allred_BO_2D" : "allred_LOO_2D";
         /*SE Kernel*/
         dataflow_args[10] = (uint32_t)true;
@@ -199,6 +214,9 @@ int main(int argc, char** argv) {
     arCfg.RunProgram(cq, program, device);
 }
 
+// Function to get the indexes of the blocks that need to be communicated.
+// Recursively checks which blocks will be sent by all the nodes that a given node will communicate 
+// with in future steps, and sets all of those chunks of data to be sent. Swing version.
 void get_swing_block_comm_indexes(
     int node, int step, uint32_t* blocks, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int num_steps = (int)log2((double)TOTAL_NODES);
@@ -207,20 +225,20 @@ void get_swing_block_comm_indexes(
     }
     for (int s = step; s < num_steps; s++) {
         int peer = get_comm_partner_swing_2D(node, s, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
-        // blocks[peer] = 1;
         if (peer < 32) {
             *blocks = *blocks | (1 << peer);
         } else {
             *(blocks + 1) = *(blocks + 1) | (1 << (peer - 32));
         }
-        // step_directions = sending_SE ? (step_directions | (1 << algo_step)) : (step_directions & ~(1 <<
-        // algo_step));
         horizontal_step = !horizontal_step;
         get_swing_block_comm_indexes(peer, s + 1, blocks, horizontal_step, SIDE_LENGTH, TOTAL_NODES);
     }
     return;
 }
 
+// Function to get the indexes of the blocks that need to be communicated.
+// Recursively checks which blocks will be sent by all the nodes that a given node will communicate 
+// with in future steps, and sets all of those chunks of data to be sent. Recursive doubling version.
 void get_recdub_block_comm_indexes(
     int node,
     int step,

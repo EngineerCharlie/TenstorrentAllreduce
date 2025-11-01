@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
 
                 horizontal_step = !horizontal_step;
             }
-            step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
+            step_directions = get_step_directions(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
 
         dataflow_args[14] = step_directions;

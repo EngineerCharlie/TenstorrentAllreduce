@@ -14,6 +14,7 @@ using namespace tt::tt_metal;
 #define OVERRIDE_KERNEL_PREFIX ""
 #endif
 
+// Checks result vector to ensure it is correct
 void validate_result_vector(
     const std::vector<uint32_t>& result_vec,
     const std::vector<uint32_t>& src_vec_0,
@@ -131,7 +132,8 @@ int highest_power_of_two(int value) {
     return 1;
 }
 
-uint32_t get_SE(int node_x, int node_y) {
+// Returns the pattern of which NoC will be used for each comm step for swing algo
+uint32_t get_step_directions(int node_x, int node_y) {
     if (node_x % 2 == 0) {
         return node_y % 2 == 0 ? 0b110011 : 0b011001;
     } else {
@@ -139,6 +141,7 @@ uint32_t get_SE(int node_x, int node_y) {
     }
 }
 
+// Returns the 1D index of the communication partner for a given node at a given step
 int get_comm_partner_recdub_2D(
     int node,
     int recdub_step,
@@ -159,6 +162,7 @@ int get_comm_partner_recdub_2D(
                            : recv_node * SIDE_LENGTH + node_other_position;
 }
 
+// Returns the 1D index of the communication partner for a given node at a given step
 int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE_LENGTH, int TOTAL_NODES) {
     int row = node / SIDE_LENGTH;
     int col = node % SIDE_LENGTH;
@@ -186,6 +190,7 @@ int get_comm_partner_swing_2D(int node, int step, bool horizontal_step, int SIDE
     return comm_partner;  // will  loop round  to  always be in  range
 }
 
+// Handles all the setting up given a specific config
 AllredConfig::AllredConfig(
     int argc,
     char** argv,
@@ -283,6 +288,7 @@ AllredConfig::AllredConfig(
     EnqueueWriteBuffer(cq, src_1_dram_buffer, src_vec_1, true);
 }
 
+// Sets up the kernel
 KernelHandle CreateDataflowKernel(
     Program& program,
     const CoreCoord& core,

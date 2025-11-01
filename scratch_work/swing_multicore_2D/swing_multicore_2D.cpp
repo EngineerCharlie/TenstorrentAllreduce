@@ -13,7 +13,7 @@ using namespace tt::tt_metal;
 
 int ceil_div(int, int);
 int get_comm_partner_2D(int, int, bool, int, int);
-uint32_t get_SE(int, int);
+uint32_t get_step_directions(int, int);
 int highest_power_of_two(int);
 
 int main(int argc, char** argv) {
@@ -155,8 +155,8 @@ int main(int argc, char** argv) {
         compute_args[2] = (uint32_t)physical_core.y;
 
         /*Order of operations (whether each step is NW or SE NOC)*/
-        dataflow_args[10] = get_SE(core_array[core_i].x, core_array[core_i].y);
-        compute_args[3] = get_SE(core_array[core_i].x, core_array[core_i].y);
+        dataflow_args[10] = get_step_directions(core_array[core_i].x, core_array[core_i].y);
+        compute_args[3] = get_step_directions(core_array[core_i].x, core_array[core_i].y);
 
         dataflow_args[9] = (uint32_t)true;  // this_core_SE
 
@@ -275,7 +275,7 @@ int get_comm_partner_2D(int node, int step, bool horizontal_step, int SIDE_LENGT
 }
 
 // Returns a uint32_t where bits 0-5 store boolean direction_SE
-uint32_t get_SE(int node_x, int node_y) {
+uint32_t get_step_directions(int node_x, int node_y) {
     if (node_x % 2 == 0) {
         if (node_y % 2 == 0) {  // node 0,0
             return 0b110011;    // Binary: 110011 (true, true, false, false, true, true)

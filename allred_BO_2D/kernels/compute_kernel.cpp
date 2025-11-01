@@ -11,15 +11,10 @@ namespace NAMESPACE {
 void MAIN {
     uint32_t algo_steps = get_arg_val<uint32_t>(0);
     bool bandwidth_optimal = (bool) get_arg_val<uint32_t>(1);
-    // uint32_t this_core_y = get_arg_val<uint32_t>(2);
-    // uint32_t packed_bools = get_arg_val<uint32_t>(3);
     uint32_t num_tiles = get_arg_val<uint32_t>(4);
     uint32_t num_tiles_per_node = get_arg_val<uint32_t>(5);
     uint32_t total_nodes = bandwidth_optimal ? 64 : num_tiles < 64 ? num_tiles : 64;
 
-    // constexpr uint32_t cb_id_compute = tt::CBIndex::c_0;
-    // constexpr uint32_t cb_id_NW = tt::CBIndex::c_1;
-    // constexpr uint32_t cb_id_SE = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_recv = tt::CBIndex::c_3;
     constexpr uint32_t cb_id_local = tt::CBIndex::c_16;
 
@@ -34,21 +29,28 @@ void MAIN {
     // Initialize the compute cores
     binary_op_init_common(cb_id_local, cb_id_recv, cb_id_local);
     add_tiles_init(cb_id_local, cb_id_recv);
+
     bool recv_block = true;
-    for (uint32_t j = 0; j < 1; j++) { // # repeats of algorithm to get accurate timings
+    for (uint32_t j = 0; j < 1; j++) { // This loop simply repeats the algorithm to get accurate timings
         for (uint32_t i = 0; i < algo_steps; i++) {
-            // Signal appropriate NOC core to exchange data with other core
             uint32_t reg_index = 0;
-            // Doesn't work if n_block is less than total_nodes
+
+            // Iterate through each block of tiles
             for (uint32_t n_block = 0; n_block < total_nodes; n_block++) {
+
+                //For the BO version, determine if we need to perform computation on this block of tiles
+                //For the LO version, every block is computed
                 if (bandwidth_optimal)
                     recv_block = (block_indexes[i] >> n_block) & 1;  // Extract bit i
 
+                //Iterate through each tile in the block
                 for (uint32_t tile_num = n_block * num_tiles_per_node; tile_num < (n_block + 1) * num_tiles_per_node;
                      tile_num++) {
                     cb_wait_front(cb_id_recv, 1); // Await blocks to be exchanged
                     cb_wait_front(cb_id_local, 1);                   // Unpack
-                    if (recv_block) { // Only part that can be skipped without hangs
+
+                    //Perform computation only if this block is marked for computation (BO version)
+                    if (recv_block) {
                         tile_regs_acquire();
                         add_tiles(cb_id_local, cb_id_recv, 0, 0, reg_index);
                         tile_regs_commit();
@@ -56,6 +58,8 @@ void MAIN {
                         pack_tile<true>(reg_index, cb_id_local, tile_num);
                         tile_regs_release();
                     }
+
+                    //Pop the blocks after computation
                     cb_pop_front(cb_id_recv, 1);
                     cb_pop_front(cb_id_local, 1);
                 }

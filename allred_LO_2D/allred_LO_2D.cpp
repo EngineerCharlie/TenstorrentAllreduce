@@ -1,3 +1,8 @@
+// DEPRECATED!
+
+
+
+
 #include <tt-metalium/device.hpp>
 #include "allred_helper.hpp"
 
@@ -82,7 +87,7 @@ int main(int argc, char** argv) {
                 dataflow_args[13 + 2 * swing_step] = (uint32_t)physical_core.y;
                 horizontal_step = !horizontal_step;
             }
-            step_directions = get_SE(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
+            step_directions = get_step_directions(arCfg.core_array[core_i].x, arCfg.core_array[core_i].y);
         }
 
         dataflow_args[10] = step_directions;
