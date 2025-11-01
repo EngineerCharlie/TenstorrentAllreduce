@@ -2,6 +2,8 @@
 
 This repo contains 5 implementations of the allreduce algorithm for the n150, with integrated testing and debugging options, as well as some other work that was done during the development to understand the workings of the n150. In the repo, if you're interested in a detailed evaluation of the performance, you can read the pdf found in the repo.
 
+Note that, the truly optimal Latency Optimal implementation was merged with the Bandwidth Optimal implementation, and is found in allred_BO_2D. The allred_LO_2D is an older, non-fully parallelized version, but is quite a lot simpler to read and understand, so I didn't remove it.
+
 ## The algorithms implemented
 
 All algorithms are implemented for 64 of the 72 Tensix cores available. LO works on power of 2 data sizes between 2kB and 640kB. The BO and SM implementations work on data sizes that are a multiple of 128kB, up to 640kB.
